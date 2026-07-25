@@ -993,10 +993,24 @@ var we = class {
 var YTDLP_BINARY_PATH = fileURLToPath(new URL("./bin/yt-dlp", import.meta.url));
 var PLUGIN_DIR = fileURLToPath(new URL("../../ytdlp-po/plugins", import.meta.url));
 var YTDLP_COOKIES_FILE = fileURLToPath(new URL("../../ytdlp-po/cookies.txt", import.meta.url));
+var YT_EGRESS_HOST = "www.youtube.com";
+function applyEgress(opts) {
+  const plan = getConduitHost().resolveEgress?.(YT_EGRESS_HOST);
+  if (!plan) return;
+  if (plan.mode === "blocked") {
+    throw new Error(
+      "VPN kill switch is on and the tunnel is down \u2014 refusing to run yt-dlp direct."
+    );
+  }
+  if (plan.mode === "tunnel" && plan.sourceAddress) {
+    opts.sourceAddress = plan.sourceAddress;
+  }
+}
 function ytCommonOptions() {
   const opts = {};
   if (existsSync5(PLUGIN_DIR)) opts.pluginDirs = [PLUGIN_DIR];
   if (existsSync5(YTDLP_COOKIES_FILE)) opts.cookies = YTDLP_COOKIES_FILE;
+  applyEgress(opts);
   return opts;
 }
 function makeYtDlp() {
