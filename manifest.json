@@ -1,21 +1,60 @@
 {
   "id": "rewind.conduit",
-  "name": "The Conduit",
-  "version": "2.0.0",
-  "description": "yt-dlp online video for Rewind — homepage trailers, the Videos library (YouTube search + playback), and YouTube Music. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
-  "resources": ["catalog", "meta", "stream", "search"],
-  "types": ["video", "channel", "music", "track", "album", "artist", "playlist"],
-  "idPrefixes": ["yt:", "UC"],
+  "name": "Conduit",
+  "version": "2.0.1",
+  "description": "yt-dlp online video for Rewind \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
+  "resources": [
+    "catalog",
+    "meta",
+    "stream",
+    "search",
+    "artwork"
+  ],
+  "types": [
+    "video",
+    "channel",
+    "music",
+    "track",
+    "album",
+    "artist",
+    "playlist"
+  ],
+  "idPrefixes": [
+    "yt:",
+    "UC"
+  ],
+  "provides": {
+    "content": [
+      "videos",
+      "music"
+    ],
+    "metadata": [
+      "videos",
+      "music"
+    ],
+    "artwork": [
+      "videos",
+      "music"
+    ]
+  },
   "rewind": {
     "kind": "videos",
-    "sdk": 1,
+    "sdk": 2,
     "repo": "j4ckgrey/rewind_videos",
     "branch": "main",
     "bundlePath": "dist/index.mjs",
     "bundleUrl": "https://raw.githubusercontent.com/j4ckgrey/rewind_videos/release/dist/index.mjs",
     "tabs": [],
     "configKeys": [],
-    "features": ["trailers", "videos", "ytmusic"],
-    "install": { "provisions": ["yt-dlp-binary"] }
+    "features": [
+      "trailers",
+      "videos",
+      "ytmusic"
+    ],
+    "install": {
+      "provisions": [
+        "yt-dlp-binary"
+      ]
+    }
   }
 }

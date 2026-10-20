@@ -6,15 +6,15 @@ var __export = (target, all) => {
 };
 
 // ../rewind_addon_sdk/src/manifest.ts
-var SDK_PROTOCOL_VERSION = 1;
+var SDK_PROTOCOL_VERSION = 2;
 
 // ../rewind_addon_sdk/src/addon.ts
 function defineAddon(def) {
   return {
     manifest: def.manifest,
     async register(host) {
-      const { resources = {}, api } = await def.setup(host);
-      return { sdk: SDK_PROTOCOL_VERSION, manifest: def.manifest, resources, api };
+      const { resources: resources2 = {}, api } = await def.setup(host);
+      return { sdk: SDK_PROTOCOL_VERSION, manifest: def.manifest, resources: resources2, api };
     }
   };
 }
@@ -1363,8 +1363,8 @@ async function searchSongs(query, limit) {
     const titleRun = colRuns(r, 0)[0];
     const videoId = titleRun?.navigationEndpoint?.watchEndpoint?.videoId;
     if (!videoId || videoId.length !== 11) continue;
-    const meta = colRuns(r, 1).map((x2) => x2.text || "");
-    const parts = meta.filter((s) => s && s !== " \u2022 ");
+    const meta2 = colRuns(r, 1).map((x2) => x2.text || "");
+    const parts = meta2.filter((s) => s && s !== " \u2022 ");
     const artist = parts[0] ?? "";
     let album = "";
     let duration = 0;
@@ -1396,8 +1396,8 @@ async function searchAlbumsInnerTube(query, limit) {
     if (!r) continue;
     const browseId = r?.navigationEndpoint?.browseEndpoint?.browseId;
     if (!browseId || !browseId.startsWith("MPREb_")) continue;
-    const meta = colRuns(r, 1).map((x2) => x2.text || "");
-    const parts = meta.filter((s) => s && s !== " \u2022 " && s !== "Album");
+    const meta2 = colRuns(r, 1).map((x2) => x2.text || "");
+    const parts = meta2.filter((s) => s && s !== " \u2022 " && s !== "Album");
     const artist = parts[0] ?? "";
     const year = parts[1] ?? "";
     hits.push({
@@ -1420,8 +1420,8 @@ async function searchArtists(query, limit) {
     if (!r) continue;
     const browseId = r?.navigationEndpoint?.browseEndpoint?.browseId;
     if (!browseId || !browseId.startsWith("UC")) continue;
-    const meta = colRuns(r, 1).map((x2) => x2.text || "");
-    const parts = meta.filter((s) => s && s !== " \u2022 " && s !== "Artist");
+    const meta2 = colRuns(r, 1).map((x2) => x2.text || "");
+    const parts = meta2.filter((s) => s && s !== " \u2022 " && s !== "Artist");
     const subscribers = parts[0] ?? "";
     hits.push({
       id: browseId,
@@ -2214,32 +2214,85 @@ function readYoutubeCookiesStatus(cfg) {
   };
 }
 
-// manifest.json
-var manifest_default = {
-  id: "rewind.conduit",
-  name: "The Conduit",
-  version: "2.0.0",
-  description: "yt-dlp online video for Rewind \u2014 homepage trailers, the Videos library (YouTube search + playback), and YouTube Music. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
-  resources: ["catalog", "meta", "stream", "search"],
-  types: ["video", "channel", "music", "track", "album", "artist", "playlist"],
-  idPrefixes: ["yt:", "UC"],
-  rewind: {
-    kind: "videos",
-    sdk: 1,
-    repo: "j4ckgrey/rewind_videos",
-    branch: "main",
-    bundlePath: "dist/index.mjs",
-    bundleUrl: "https://raw.githubusercontent.com/j4ckgrey/rewind_videos/release/dist/index.mjs",
-    tabs: [],
-    configKeys: [],
-    features: ["trailers", "videos", "ytmusic"],
-    install: { provisions: ["yt-dlp-binary"] }
-  }
-};
-
-// src/plugin.ts
+// src/resources.ts
 var SEARCH_LIMIT = 20;
 var CHANNEL_LIMIT = 6;
+function trackMeta(t) {
+  return {
+    id: t.id,
+    type: "track",
+    name: t.title,
+    subtitle: t.artist || null,
+    album: t.album || void 0,
+    duration: t.duration || null,
+    poster: t.thumbnail || videoThumb(t.id),
+    posterShape: "square"
+  };
+}
+function albumMeta(a) {
+  return {
+    id: a.id,
+    type: "album",
+    name: a.title,
+    subtitle: a.artist || null,
+    releaseInfo: a.year || null,
+    poster: a.thumbnail || null,
+    posterShape: "square",
+    trackCount: a.trackCount
+  };
+}
+function artistMeta(a) {
+  return {
+    id: a.id,
+    type: "artist",
+    name: a.name,
+    subtitle: a.subscribers || null,
+    poster: a.thumbnail || null,
+    posterShape: "circle"
+  };
+}
+function playlistMeta(p) {
+  return {
+    id: p.id,
+    type: "playlist",
+    name: p.title,
+    subtitle: p.subtitle || null,
+    poster: p.thumbnail || null,
+    posterShape: "square"
+  };
+}
+function channelMeta(c) {
+  return {
+    id: c.id,
+    type: "channel",
+    name: c.name,
+    description: c.description,
+    poster: c.avatar || null,
+    posterShape: "circle",
+    subscribers: c.subscribers,
+    verified: c.verified,
+    url: c.url
+  };
+}
+function genreMeta(g2) {
+  return { id: `genre:${g2.browseId}`, type: "collection", name: g2.name, params: g2.params };
+}
+function payloadMetas(p) {
+  return [
+    ...p.tracks.map(trackMeta),
+    ...p.albums.map(albumMeta),
+    ...p.artists.map(artistMeta),
+    ...p.playlists.map(playlistMeta)
+  ];
+}
+function videoThumb(id) {
+  const vid = extractYouTubeId(id.replace(/^yt(_id)?:/, ""));
+  return vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : null;
+}
+function videoIdOf(id) {
+  const bare = id.replace(/^yt(_id)?:/, "");
+  return extractYouTubeId(bare) ?? bare;
+}
 async function searchVideos(query) {
   const { ytdlp: ytdlp4, APPROX_DATE_OPTS: APPROX_DATE_OPTS2, entryToVideoMeta: entryToVideoMeta2 } = ytdlpVideos_exports;
   const info = await ytdlp4.getInfoAsync(
@@ -2252,8 +2305,183 @@ async function searchChannels(query) {
   const { ytdlp: ytdlp4, CHANNEL_SEARCH_SP: CHANNEL_SEARCH_SP2, entryToChannelMeta: entryToChannelMeta2 } = ytdlpVideos_exports;
   const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&sp=${CHANNEL_SEARCH_SP2}`;
   const info = await ytdlp4.getInfoAsync(url, { playlistEnd: CHANNEL_LIMIT });
-  return (info.entries || []).slice(0, CHANNEL_LIMIT).map(entryToChannelMeta2).filter((c) => c.id && c.id.startsWith("UC"));
+  return (info.entries || []).slice(0, CHANNEL_LIMIT).map(entryToChannelMeta2).filter((c) => c.id && c.id.startsWith("UC")).map(channelMeta);
 }
+async function videoInfo(id) {
+  const info = await ytdlp2.getInfoAsync(`https://www.youtube.com/watch?v=${videoIdOf(id)}`);
+  return info;
+}
+async function meta(type, id) {
+  switch (type) {
+    case "video":
+      return { meta: entryToVideoMeta(await videoInfo(id)) };
+    case "track":
+    case "music": {
+      const info = await videoInfo(id);
+      return {
+        meta: trackMeta({
+          id: videoIdOf(id),
+          title: String(info.track ?? info.title ?? ""),
+          artist: String(info.artist ?? info.uploader ?? info.channel ?? ""),
+          album: info.album ? String(info.album) : void 0,
+          duration: typeof info.duration === "number" ? info.duration : void 0,
+          thumbnail: typeof info.thumbnail === "string" ? info.thumbnail : void 0
+        })
+      };
+    }
+    case "album": {
+      const album = await fetchAlbum(id);
+      if (!album) return { meta: null };
+      return { meta: { ...albumMeta(album), items: album.tracks.map(trackMeta) } };
+    }
+    case "playlist": {
+      const pl = await fetchPlaylistTracks(id);
+      return {
+        meta: { ...playlistMeta({ id, title: pl.title, thumbnail: pl.thumbnail }), items: pl.tracks.map(trackMeta) }
+      };
+    }
+    default:
+      throw new Error(`meta does not serve type "${type}"`);
+  }
+}
+async function artwork(type, id) {
+  if (type === "video" || type === "track" || type === "music") {
+    const thumb = videoThumb(id);
+    return { artwork: { thumb, poster: thumb, background: type === "video" ? thumb : null } };
+  }
+  if (type === "album" || type === "playlist") {
+    const { meta: m2 } = await meta(type, id);
+    return { artwork: { poster: m2?.poster ?? null } };
+  }
+  if (type === "artist" || type === "channel") {
+    const hits = await searchArtists2(id, 1).catch(() => []);
+    const hit = hits.find((h2) => h2.id === id);
+    return { artwork: { poster: hit?.thumbnail ?? null } };
+  }
+  throw new Error(`artwork does not serve type "${type}"`);
+}
+async function catalog(type, id, extra) {
+  switch (`${type}/${id}`) {
+    case "track/trending":
+      return { metas: (await fetchTrendingTracks()).map(trackMeta) };
+    case "album/new-releases":
+      return { metas: (await fetchNewReleases()).map(albumMeta) };
+    case "album/popular":
+      return { metas: (await fetchPopularAlbums()).map(albumMeta) };
+    case "artist/popular":
+      return { metas: (await fetchPopularArtists()).map(artistMeta) };
+    case "playlist/moods":
+      return { metas: (await fetchMoodPlaylists()).map(playlistMeta) };
+    case "playlist/community":
+      return { metas: (await fetchCommunityPlaylists()).map(playlistMeta) };
+    case "collection/genres":
+      return { metas: (await fetchGenreTiles()).map(genreMeta) };
+  }
+  if (type === "collection" && id.startsWith("genre:")) {
+    return { metas: payloadMetas(await fetchGenreContent(id.slice(6), String(extra.params ?? ""))) };
+  }
+  if (type === "track" && id.startsWith("related:")) {
+    return { metas: (await fetchRelatedTracks(id.slice(8))).map(trackMeta) };
+  }
+  throw new Error(`catalog does not serve "${type}/${id}"`);
+}
+async function search(type, query) {
+  switch (type) {
+    case "video":
+      return { metas: await searchVideos(query) };
+    case "channel":
+      return { metas: await searchChannels(query) };
+    case "track":
+    case "music":
+      return { metas: (await searchTracks(query, SEARCH_LIMIT)).map(trackMeta) };
+    case "album":
+      return { metas: (await searchAlbums(query, SEARCH_LIMIT)).map(albumMeta) };
+    case "artist":
+      return { metas: (await searchArtists2(query, SEARCH_LIMIT)).map(artistMeta) };
+    default:
+      throw new Error(`search does not serve type "${type}"`);
+  }
+}
+async function stream(type, id) {
+  const videoId = videoIdOf(id);
+  if (type === "track" || type === "music") {
+    const s2 = await resolveAudioStream(videoId);
+    return { streams: s2 ? [{ ...s2, name: s2.title }] : [] };
+  }
+  const s = await resolveYouTubeStream(videoId);
+  return { streams: s ? [{ ...s, name: s.title }] : [] };
+}
+var resources = {
+  search: ({ type, id }) => search(type, id),
+  catalog: ({ type, id, extra }) => catalog(type, id, extra),
+  meta: ({ type, id }) => meta(type, id),
+  stream: ({ type, id }) => stream(type, id),
+  artwork: ({ type, id }) => artwork(type, id)
+};
+
+// manifest.json
+var manifest_default = {
+  id: "rewind.conduit",
+  name: "Conduit",
+  version: "2.0.1",
+  description: "yt-dlp online video for Rewind \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
+  resources: [
+    "catalog",
+    "meta",
+    "stream",
+    "search",
+    "artwork"
+  ],
+  types: [
+    "video",
+    "channel",
+    "music",
+    "track",
+    "album",
+    "artist",
+    "playlist"
+  ],
+  idPrefixes: [
+    "yt:",
+    "UC"
+  ],
+  provides: {
+    content: [
+      "videos",
+      "music"
+    ],
+    metadata: [
+      "videos",
+      "music"
+    ],
+    artwork: [
+      "videos",
+      "music"
+    ]
+  },
+  rewind: {
+    kind: "videos",
+    sdk: 2,
+    repo: "j4ckgrey/rewind_videos",
+    branch: "main",
+    bundlePath: "dist/index.mjs",
+    bundleUrl: "https://raw.githubusercontent.com/j4ckgrey/rewind_videos/release/dist/index.mjs",
+    tabs: [],
+    configKeys: [],
+    features: [
+      "trailers",
+      "videos",
+      "ytmusic"
+    ],
+    install: {
+      provisions: [
+        "yt-dlp-binary"
+      ]
+    }
+  }
+};
+
+// src/plugin.ts
 var addon = defineAddon({
   manifest: manifest_default,
   setup(host) {
@@ -2261,68 +2489,7 @@ var addon = defineAddon({
     const api = { ytdlpStream: ytdlpStream_exports, ytdlpVideos: ytdlpVideos_exports, ytmusic: ytmusic_exports, ytmusicDiscover: ytmusic_discover_exports, ytmusicInnertube: ytmusic_innertube_exports, cookies: cookies_exports };
     return {
       api,
-      resources: {
-        // search/<type>/<query>.json — one alias per unified type.
-        search: async ({ type, id }) => {
-          switch (type) {
-            case "video":
-              return { metas: await searchVideos(id) };
-            case "channel":
-              return { channels: await searchChannels(id) };
-            case "track":
-            case "music":
-              return { tracks: await searchTracks(id, SEARCH_LIMIT) };
-            case "album":
-              return { albums: await searchAlbums(id, SEARCH_LIMIT) };
-            case "artist":
-              return { artists: await searchArtists2(id, SEARCH_LIMIT) };
-            default:
-              throw new Error(`search does not serve type "${type}"`);
-          }
-        },
-        // stream/video/<ytid>.json | stream/track/<ytid>.json — playable URL.
-        stream: async ({ type, id }) => {
-          const videoId = extractYouTubeId(id) ?? id;
-          if (type === "track" || type === "music") {
-            return { stream: await resolveAudioStream(videoId) };
-          }
-          return { stream: await resolveYouTubeStream(videoId) };
-        },
-        // catalog/<type>/<shelf>.json — YT Music discover shelves under the
-        // unified aliases (album/new-releases, artist/popular, track/trending…).
-        catalog: async ({ type, id, extra }) => {
-          const key = `${type}/${id}`;
-          switch (key) {
-            case "track/trending":
-              return { tracks: await fetchTrendingTracks() };
-            case "album/new-releases":
-              return { albums: await fetchNewReleases() };
-            case "album/popular":
-              return { albums: await fetchPopularAlbums() };
-            case "artist/popular":
-              return { artists: await fetchPopularArtists() };
-            case "playlist/moods":
-              return { playlists: await fetchMoodPlaylists() };
-            case "playlist/community":
-              return { playlists: await fetchCommunityPlaylists() };
-            case "collection/genres":
-              return { genres: await fetchGenreTiles() };
-          }
-          if (type === "collection" && id.startsWith("genre:")) {
-            return fetchGenreContent(id.slice(6), String(extra.params ?? ""));
-          }
-          if (type === "track" && id.startsWith("related:")) {
-            return { tracks: await fetchRelatedTracks(id.slice(8)) };
-          }
-          throw new Error(`catalog does not serve "${key}"`);
-        },
-        // meta/album/<browseId>.json | meta/playlist/<browseId>.json
-        meta: async ({ type, id }) => {
-          if (type === "album") return { album: await fetchAlbum(id) };
-          if (type === "playlist") return await fetchPlaylistTracks(id);
-          throw new Error(`meta does not serve type "${type}"`);
-        }
-      }
+      resources
     };
   }
 });
