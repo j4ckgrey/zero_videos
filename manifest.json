@@ -2,9 +2,10 @@
   "id": "zero.conduit",
   "name": "Conduit",
   "version": "2.0.1",
-  "description": "yt-dlp online video for Zero Media \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
+  "description": "yt-dlp online video for Zero Media — content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
   "resources": [
     "catalog",
+    "catalogs",
     "meta",
     "stream",
     "search",
@@ -13,15 +14,24 @@
   "types": [
     "video",
     "channel",
+    "trailer",
     "music",
     "track",
     "album",
     "artist",
-    "playlist"
+    "playlist",
+    "genre"
   ],
   "idPrefixes": [
     "yt:",
-    "UC"
+    "yt_id:",
+    "yb:",
+    "UC",
+    "https://www.youtube.com/",
+    "https://youtube.com/",
+    "https://m.youtube.com/",
+    "https://music.youtube.com/",
+    "https://youtu.be/"
   ],
   "provides": {
     "content": [
@@ -39,22 +49,305 @@
   },
   "zero": {
     "kind": "videos",
-    "sdk": 2,
+    "sdk": 3,
     "repo": "j4ckgrey/zero_videos",
     "branch": "main",
     "bundlePath": "dist/index.mjs",
     "bundleUrl": "https://raw.githubusercontent.com/j4ckgrey/zero_videos/release/dist/index.mjs",
-    "tabs": [],
-    "configKeys": [],
-    "features": [
-      "trailers",
-      "videos",
-      "ytmusic"
+    "settings": [
+      {
+        "key": "music_enabled",
+        "type": "toggle",
+        "label": "YouTube Music",
+        "description": "Music spaces, search and playback from YouTube Music.",
+        "default": true
+      },
+      {
+        "key": "videos_enabled",
+        "type": "toggle",
+        "label": "YouTube videos",
+        "description": "Video spaces, channels, search and playback from YouTube.",
+        "default": true
+      },
+      {
+        "key": "youtubio_url",
+        "type": "url",
+        "label": "YouTubio catalogue",
+        "description": "Optional. A Stremio-style YouTube catalogue (its manifest URL) for the rows on the videos home.",
+        "placeholder": "https://…/manifest.json"
+      },
+      {
+        "key": "youtube_cookies",
+        "type": "secret",
+        "multiline": true,
+        "label": "YouTube cookies (cookies.txt)",
+        "description": "From a throwaway Google account. YouTube asks datacenter IPs to “confirm you’re not a bot”; signed-in cookies get past it. Paste the whole cookies.txt."
+      }
     ],
-    "install": {
-      "provisions": [
-        "yt-dlp-binary"
+    "actions": [
+      {
+        "id": "status"
+      },
+      {
+        "id": "rt-list"
+      },
+      {
+        "id": "rt-toggle"
+      },
+      {
+        "id": "rt-discover"
+      },
+      {
+        "id": "update-ytdlp"
+      }
+    ],
+    "ui": {
+      "tabs": [
+        {
+          "id": "youtube",
+          "label": "YouTube",
+          "icon": "film",
+          "group": "content",
+          "description": "YouTube videos, YouTube Music and the Rotten Tomatoes trailer rows, through yt-dlp.",
+          "sections": [
+            {
+              "kind": "status",
+              "id": "status",
+              "title": "Status",
+              "source": "status"
+            },
+            {
+              "kind": "form",
+              "id": "features",
+              "title": "What Conduit serves",
+              "fields": [
+                "music_enabled",
+                "videos_enabled",
+                "youtubio_url"
+              ]
+            },
+            {
+              "kind": "form",
+              "id": "cookies",
+              "title": "Sign-in cookies",
+              "fields": [
+                "youtube_cookies"
+              ]
+            },
+            {
+              "kind": "table",
+              "id": "rt",
+              "title": "Rotten Tomatoes trailers",
+              "description": "Each enabled playlist becomes a trailer row on the home screen.",
+              "rows": "rt-list",
+              "columns": [
+                {
+                  "key": "title",
+                  "label": "Playlist"
+                },
+                {
+                  "key": "videos",
+                  "label": "Videos",
+                  "format": "number"
+                },
+                {
+                  "key": "enabled",
+                  "label": "Shown",
+                  "format": "bool"
+                }
+              ],
+              "rowButtons": [
+                {
+                  "action": "rt-toggle",
+                  "label": "Show / hide"
+                }
+              ],
+              "empty": "No playlists yet — press Discover playlists."
+            },
+            {
+              "kind": "buttons",
+              "id": "tools",
+              "title": "Tools",
+              "buttons": [
+                {
+                  "action": "rt-discover",
+                  "label": "Discover playlists"
+                },
+                {
+                  "action": "update-ytdlp",
+                  "label": "Update yt-dlp"
+                }
+              ]
+            }
+          ]
+        }
       ]
+    },
+    "spaces": [
+      {
+        "id": "music",
+        "name": {
+          "en": "Music",
+          "de": "Musik",
+          "fr": "Musique",
+          "it": "Musica",
+          "es": "Música",
+          "nl": "Muziek",
+          "pt": "Música",
+          "zh": "音乐"
+        },
+        "icon": "music",
+        "layout": "music",
+        "types": [
+          "track",
+          "album",
+          "artist",
+          "playlist",
+          "genre"
+        ]
+      },
+      {
+        "id": "videos",
+        "name": {
+          "en": "Videos",
+          "de": "Videos",
+          "fr": "Vidéos",
+          "it": "Video",
+          "es": "Vídeos",
+          "nl": "Video's",
+          "pt": "Vídeos",
+          "zh": "视频"
+        },
+        "icon": "video",
+        "layout": "video",
+        "types": [
+          "video",
+          "channel",
+          "playlist"
+        ]
+      }
+    ]
+  },
+  "catalogs": [
+    {
+      "id": "made-for-you",
+      "type": "track",
+      "name": "Made for you",
+      "names": {
+        "en": "Made for you",
+        "de": "Für dich",
+        "es": "Hecho para ti",
+        "fr": "Pour vous",
+        "it": "Per te",
+        "nl": "Voor jou",
+        "pt": "Feito para você",
+        "zh": "为你推荐"
+      },
+      "extra": [
+        "seeds"
+      ]
+    },
+    {
+      "id": "trending",
+      "type": "track",
+      "name": "Trending",
+      "names": {
+        "en": "Trending",
+        "de": "Angesagt",
+        "es": "Tendencias",
+        "fr": "Tendances",
+        "it": "Di tendenza",
+        "nl": "Trending",
+        "pt": "Em alta",
+        "zh": "热门"
+      },
+      "extra": [
+        "genre"
+      ]
+    },
+    {
+      "id": "new-releases",
+      "type": "album",
+      "name": "New releases",
+      "names": {
+        "en": "New releases",
+        "de": "Neuerscheinungen",
+        "es": "Novedades",
+        "fr": "Nouveautés",
+        "it": "Nuove uscite",
+        "nl": "Nieuwe releases",
+        "pt": "Lançamentos",
+        "zh": "新发行"
+      },
+      "extra": [
+        "genre"
+      ]
+    },
+    {
+      "id": "popular",
+      "type": "artist",
+      "name": "Popular artists",
+      "names": {
+        "en": "Popular artists",
+        "de": "Beliebte Künstler",
+        "es": "Artistas populares",
+        "fr": "Artistes populaires",
+        "it": "Artisti popolari",
+        "nl": "Populaire artiesten",
+        "pt": "Artistas populares",
+        "zh": "热门艺人"
+      },
+      "extra": [
+        "genre"
+      ]
+    },
+    {
+      "id": "community",
+      "type": "playlist",
+      "name": "Community playlists",
+      "names": {
+        "en": "Community playlists",
+        "de": "Community-Playlists",
+        "es": "Listas de la comunidad",
+        "fr": "Playlists de la communauté",
+        "it": "Playlist della community",
+        "nl": "Community-playlists",
+        "pt": "Playlists da comunidade",
+        "zh": "社区歌单"
+      },
+      "extra": [
+        "genre"
+      ]
+    },
+    {
+      "id": "moods",
+      "type": "playlist",
+      "name": "Moods & moments",
+      "names": {
+        "en": "Moods & moments",
+        "de": "Stimmungen",
+        "es": "Estados de ánimo",
+        "fr": "Humeurs",
+        "it": "Mood e momenti",
+        "nl": "Stemmingen",
+        "pt": "Climas e momentos",
+        "zh": "心情与时刻"
+      }
+    },
+    {
+      "id": "genres",
+      "type": "genre",
+      "name": "Genres",
+      "names": {
+        "en": "Genres",
+        "de": "Genres",
+        "es": "Géneros",
+        "fr": "Genres",
+        "it": "Generi",
+        "nl": "Genres",
+        "pt": "Gêneros",
+        "zh": "流派"
+      }
     }
-  }
+  ]
 }

@@ -1,52 +1,1343 @@
 import{fileURLToPath as __sdk_f}from'node:url';import{dirname as __sdk_d}from'node:path';const __filename=__sdk_f(import.meta.url);const __dirname=__sdk_d(__filename);
 var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
+};
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
+// ../zero_addon_sdk/src/types.ts
+function isCanonicalType(t) {
+  return CONTENT_TYPES.includes(t);
+}
+function isCanonicalResource(r) {
+  return RESOURCES.includes(r);
+}
+var CONTENT_TYPES, RESOURCES;
+var init_types = __esm({
+  "../zero_addon_sdk/src/types.ts"() {
+    "use strict";
+    CONTENT_TYPES = [
+      "movie",
+      "series",
+      "season",
+      "episode",
+      "video",
+      // standalone online video (YouTube etc.)
+      "channel",
+      // a video channel / uploader
+      "music",
+      // generic music entry point (prefer the finer aliases below)
+      "artist",
+      "album",
+      "track",
+      // a single audio track ("music/audio")
+      "playlist",
+      "image",
+      "adult",
+      "person",
+      "collection"
+    ];
+    RESOURCES = [
+      /** List/browse/paginate items of a type (rows, libraries, discover shelves). */
+      "catalog",
+      /** Full detail for one id (title, images, people, children…). */
+      "meta",
+      /** Candidate streams for one id (NOT yet playable — see resolve). */
+      "stream",
+      /** Turn one chosen stream candidate into a playable URL (two-phase play). */
+      "resolve",
+      /** Free-text search within a type. */
+      "search",
+      /** Subtitle candidates for one id. */
+      "subtitles",
+      /** Playback-session helpers (HLS proxying, remux hints…). */
+      "playback",
+      /** Images for one id (poster/background/logo/thumb/banner). */
+      "artwork",
+      /** Lyrics for one track. */
+      "lyrics",
+      /** Trailer / preview clips for one id. */
+      "trailers",
+      /** Intro / recap / credits / chapter markers for one video. */
+      "markers",
+      /** The catalogs on offer right now, when they depend on settings or on
+       *  what the addon discovered (`{ catalogs }`); without it, manifest
+       *  `catalogs` is the list. */
+      "catalogs",
+      /** Run one of the addon's declared automations (manifest
+       *  zero.automations) — the server's scheduler calls it; id = automation
+       *  id. Answers { ok, message? }. */
+      "automation",
+      /** Draw one of the addon's own spaces (zero.spaces with render "addon"):
+       *  type "view" (id = path) → { view }, type "play" (id = item) → { play }.
+       *  See spaces.ts. */
+      "space"
+    ];
+  }
+});
+
+// ../zero_addon_sdk/src/capabilities.ts
+function isCategory(v) {
+  return typeof v === "string" && CATEGORIES.includes(v);
+}
+function isRole(v) {
+  return typeof v === "string" && ROLES.includes(v);
+}
+function providesFor(provides, role, category) {
+  return !!provides?.[role]?.includes(category);
+}
+function requiredResources(provides) {
+  const out = /* @__PURE__ */ new Set();
+  for (const role of Object.keys(provides ?? {})) {
+    if (isRole(role) && provides[role].length > 0) {
+      for (const r of ROLE_RESOURCES[role].required) out.add(r);
+    }
+  }
+  return [...out];
+}
+var CATEGORIES, ROLES, ROLE_RESOURCES;
+var init_capabilities = __esm({
+  "../zero_addon_sdk/src/capabilities.ts"() {
+    "use strict";
+    CATEGORIES = [
+      "movies",
+      "series",
+      "anime",
+      "music",
+      "videos",
+      "books",
+      "photos",
+      "tv",
+      "radio",
+      "adult"
+    ];
+    ROLES = [
+      /** Items to browse, search and play: catalogs, search, streams, resolve. */
+      "content",
+      /** Descriptive data for one item: title, overview, year, people, genres… */
+      "metadata",
+      /** Images for one item: poster, background, logo, thumbnail, banner. */
+      "artwork",
+      /** Song lyrics, plain or time-synced. */
+      "lyrics",
+      /** Subtitle files for a video. */
+      "subtitles",
+      /** Trailer / preview clips for an item. */
+      "trailers",
+      /** Time markers inside a video: intro, recap, credits, chapters. */
+      "markers"
+    ];
+    ROLE_RESOURCES = {
+      content: { required: ["stream"], optional: ["catalog", "catalogs", "search", "meta", "resolve", "playback"] },
+      // A metadata source may also publish browse lists (trending, bestsellers…).
+      metadata: { required: ["meta"], optional: ["search", "catalog", "catalogs"] },
+      artwork: { required: ["artwork"], optional: [] },
+      lyrics: { required: ["lyrics"], optional: [] },
+      subtitles: { required: ["subtitles"], optional: [] },
+      trailers: { required: ["trailers"], optional: [] },
+      markers: { required: ["markers"], optional: [] }
+    };
+  }
+});
+
+// ../zero_addon_sdk/src/responses.ts
+function checkResponse(resource, body) {
+  const keys = RESPONSE_KEYS[resource];
+  if (!keys) return null;
+  if (typeof body !== "object" || body === null) return `${resource}: response must be an object`;
+  const b2 = body;
+  for (const key of keys) {
+    if (!(key in b2)) return `${resource}: missing "${key}" (got ${Object.keys(b2).join(", ") || "nothing"})`;
+    if (ARRAY_KEYS.has(key) && !Array.isArray(b2[key])) return `${resource}: "${key}" must be an array`;
+  }
+  if (keys.includes("metas")) {
+    for (const m2 of b2.metas) {
+      const meta2 = m2;
+      if (typeof meta2?.id !== "string" || typeof meta2?.type !== "string" || typeof meta2?.name !== "string") {
+        return `${resource}: every meta needs string id, type and name`;
+      }
+    }
+  }
+  if (keys.includes("streams")) {
+    for (const s of b2.streams) {
+      const d = s?.display;
+      if (d !== void 0 && (typeof d !== "object" || d === null || typeof d.title !== "string")) {
+        return `${resource}: a stream's "display" needs a string title`;
+      }
+    }
+  }
+  if (resource === "resolve" && b2.url !== null && typeof b2.url !== "string") {
+    return 'resolve: "url" must be a string or null';
+  }
+  if (resource === "artwork" && (typeof b2.artwork !== "object" || b2.artwork === null)) {
+    return 'artwork: "artwork" must be an object';
+  }
+  return null;
+}
+var RESPONSE_KEYS, ARRAY_KEYS;
+var init_responses = __esm({
+  "../zero_addon_sdk/src/responses.ts"() {
+    "use strict";
+    RESPONSE_KEYS = {
+      catalog: ["metas"],
+      catalogs: ["catalogs"],
+      search: ["metas"],
+      meta: ["meta"],
+      stream: ["streams"],
+      resolve: ["url"],
+      artwork: ["artwork"],
+      lyrics: ["lyrics"],
+      subtitles: ["subtitles"],
+      trailers: ["trailers"],
+      markers: ["markers"],
+      automation: ["ok"]
+    };
+    ARRAY_KEYS = /* @__PURE__ */ new Set(["metas", "streams", "subtitles", "trailers", "markers", "catalogs"]);
+  }
+});
+
+// ../zero_addon_sdk/src/settings.ts
+function isUiText(v) {
+  if (typeof v === "string") return v.length > 0;
+  return typeof v === "object" && v !== null && !Array.isArray(v) && Object.values(v).every((x2) => typeof x2 === "string");
+}
+function validateSettings(raw) {
+  if (!Array.isArray(raw)) throw new Error("zero.settings must be an array");
+  const seen = /* @__PURE__ */ new Set();
+  for (const [i, f] of raw.entries()) {
+    const at = `zero.settings[${i}]`;
+    if (typeof f !== "object" || f === null) throw new Error(`${at} must be an object`);
+    if (typeof f.key !== "string" || !KEY_RE.test(f.key)) throw new Error(`${at}.key must match ${KEY_RE}`);
+    if (seen.has(f.key)) throw new Error(`${at}.key "${f.key}" is declared twice`);
+    seen.add(f.key);
+    if (!SETTING_TYPES.includes(String(f.type))) {
+      throw new Error(`${at}.type must be one of ${SETTING_TYPES.join(", ")}`);
+    }
+    if (!isUiText(f.label)) throw new Error(`${at}.label is required`);
+    if (f.type === "select" && (!Array.isArray(f.options) || f.options.length === 0)) {
+      throw new Error(`${at}: a select needs options`);
+    }
+    if (f.default !== void 0) {
+      const why = checkSettingValue(f, f.default);
+      if (why) throw new Error(`${at}.default: ${why}`);
+    }
+  }
+  for (const f of raw) {
+    if (f.showIf && !seen.has(f.showIf.key)) throw new Error(`zero.settings "${f.key}".showIf names unknown key "${f.showIf.key}"`);
+  }
+  return raw;
+}
+function checkSettingValue(field, value) {
+  switch (field.type) {
+    case "number":
+      if (typeof value !== "number" || !Number.isFinite(value)) return "must be a number";
+      if (field.min !== void 0 && value < field.min) return `must be at least ${field.min}`;
+      if (field.max !== void 0 && value > field.max) return `must be at most ${field.max}`;
+      return null;
+    case "toggle":
+      return typeof value === "boolean" ? null : "must be true or false";
+    case "list":
+      return Array.isArray(value) && value.every((x2) => typeof x2 === "string") ? null : "must be a list of strings";
+    case "select":
+      return typeof value === "string" && !!field.options?.some((o) => o.value === value) ? null : "must be one of the options";
+    case "url":
+      if (typeof value !== "string") return "must be text";
+      return value === "" || /^https?:\/\/\S+$/.test(value) ? null : "must be an http(s) link";
+    default:
+      return typeof value === "string" ? null : "must be text";
+  }
+}
+function resolveSettings(fields, stored) {
+  const out = {};
+  for (const f of fields) {
+    const v = stored[f.key];
+    if (v !== void 0 && checkSettingValue(f, v) === null) out[f.key] = v;
+    else if (f.default !== void 0) out[f.key] = f.default;
+  }
+  return out;
+}
+function parseSettingInput(field, raw) {
+  let value = raw;
+  if (field.type === "number" && typeof raw === "string") value = raw.trim() === "" ? NaN : Number(raw);
+  if (field.type === "toggle" && typeof raw === "string") value = raw === "true" || raw === "1" || raw === "on";
+  if (field.type === "list" && typeof raw === "string") value = raw.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+  const why = checkSettingValue(field, value);
+  if (why) throw new Error(`${typeof field.label === "string" ? field.label : field.key}: ${why}`);
+  if (field.required && (value === "" || Array.isArray(value) && value.length === 0)) {
+    throw new Error(`${typeof field.label === "string" ? field.label : field.key} is required`);
+  }
+  return value;
+}
+function uiText(text, locale = "en") {
+  if (text === void 0) return "";
+  if (typeof text === "string") return text;
+  return text[locale] ?? text.en ?? Object.values(text)[0] ?? "";
+}
+var SETTING_TYPES, KEY_RE;
+var init_settings = __esm({
+  "../zero_addon_sdk/src/settings.ts"() {
+    "use strict";
+    SETTING_TYPES = [
+      "text",
+      /** Masked on screen and never sent back to the browser once saved. */
+      "secret",
+      "url",
+      "number",
+      "toggle",
+      "select",
+      "textarea",
+      /** A list of short strings (hosts, tags, ids…). */
+      "list"
+    ];
+    KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
+  }
+});
+
+// ../zero_addon_sdk/src/ui.ts
+function validateUi(raw, settingKeys, actionIds) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("zero.ui must be an object");
+  const ui = raw;
+  const needAction = (id, at) => {
+    if (typeof id !== "string" || !actionIds.has(id)) throw new Error(`${at}: action "${String(id)}" is not declared in zero.actions`);
+  };
+  const needFields = (keys, at) => {
+    if (!Array.isArray(keys) || keys.length === 0) throw new Error(`${at}.fields must list setting keys`);
+    for (const k2 of keys) if (!settingKeys.has(k2)) throw new Error(`${at}: "${String(k2)}" is not a key in zero.settings`);
+  };
+  const checkSections = (sections, at) => {
+    if (!Array.isArray(sections)) throw new Error(`${at} must be an array of sections`);
+    const ids = /* @__PURE__ */ new Set();
+    for (const [i, s] of sections.entries()) {
+      const sat = `${at}[${i}]`;
+      if (!SECTION_KINDS.includes(s?.kind)) throw new Error(`${sat}.kind must be one of ${SECTION_KINDS.join(", ")}`);
+      if (typeof s.id !== "string" || !ID_RE.test(s.id)) throw new Error(`${sat}.id must match ${ID_RE}`);
+      if (ids.has(s.id)) throw new Error(`${sat}.id "${s.id}" is used twice`);
+      ids.add(s.id);
+      if (s.kind === "form") needFields(s.fields, sat);
+      if (s.kind === "table") {
+        needAction(s.rows, `${sat}.rows`);
+        if (!Array.isArray(s.columns) || s.columns.length === 0) throw new Error(`${sat}.columns must not be empty`);
+        for (const b2 of s.rowButtons ?? []) needAction(b2.action, `${sat}.rowButtons`);
+        if (s.add) {
+          needAction(s.add.action, `${sat}.add`);
+          validateSettings(s.add.fields);
+        }
+      }
+      if (s.kind === "status") needAction(s.source, `${sat}.source`);
+      if (s.kind === "buttons") {
+        if (!Array.isArray(s.buttons) || s.buttons.length === 0) throw new Error(`${sat}.buttons must not be empty`);
+        for (const b2 of s.buttons) needAction(b2.action, `${sat}.buttons`);
+      }
+    }
+  };
+  const tabIds = /* @__PURE__ */ new Set();
+  for (const [i, tab] of (ui.tabs ?? []).entries()) {
+    const at = `zero.ui.tabs[${i}]`;
+    if (typeof tab.id !== "string" || !ID_RE.test(tab.id)) throw new Error(`${at}.id must match ${ID_RE}`);
+    if (tabIds.has(tab.id)) throw new Error(`${at}.id "${tab.id}" is used twice`);
+    tabIds.add(tab.id);
+    if (tab.group !== void 0 && !UI_TAB_GROUPS.includes(tab.group)) {
+      throw new Error(`${at}.group must be one of ${UI_TAB_GROUPS.join(", ")}`);
+    }
+    if (!Array.isArray(tab.sections) || tab.sections.length === 0) throw new Error(`${at}.sections must not be empty`);
+    checkSections(tab.sections, `${at}.sections`);
+  }
+  if (ui.card !== void 0) checkSections(ui.card, "zero.ui.card");
+  if (ui.metadata !== void 0) needFields(ui.metadata.fields, "zero.ui.metadata");
+  return ui;
+}
+function uiActionIds(ui) {
+  const out = /* @__PURE__ */ new Set();
+  const walk = (sections) => {
+    for (const s of sections ?? []) {
+      if (s.kind === "table") {
+        out.add(s.rows);
+        for (const b2 of s.rowButtons ?? []) out.add(b2.action);
+        if (s.add) out.add(s.add.action);
+      }
+      if (s.kind === "status") out.add(s.source);
+      if (s.kind === "buttons") for (const b2 of s.buttons) out.add(b2.action);
+    }
+  };
+  for (const t of ui?.tabs ?? []) walk(t.sections);
+  walk(ui?.card);
+  return out;
+}
+var UI_TAB_GROUPS, ID_RE, SECTION_KINDS;
+var init_ui = __esm({
+  "../zero_addon_sdk/src/ui.ts"() {
+    "use strict";
+    init_settings();
+    UI_TAB_GROUPS = ["content", "streaming", "system"];
+    ID_RE = /^[a-z][a-z0-9-]{0,40}$/;
+    SECTION_KINDS = ["form", "table", "status", "buttons", "notice"];
+  }
+});
+
+// ../zero_addon_sdk/src/storage.ts
+async function migrate(db2, steps) {
+  const row = await db2.get("PRAGMA user_version");
+  const current = row?.user_version ?? 0;
+  for (let v = current + 1; v <= steps.length; v += 1) {
+    await db2.transaction(async () => {
+      await db2.exec(steps[v - 1]);
+      await db2.exec(`PRAGMA user_version = ${v}`);
+    });
+  }
+  return steps.length;
+}
+var init_storage = __esm({
+  "../zero_addon_sdk/src/storage.ts"() {
+    "use strict";
+  }
+});
+
+// ../zero_addon_sdk/src/services.ts
+function validateServices(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error("manifest.zero.services must be { provides?, uses? }");
+  const s = raw;
+  for (const key of ["provides", "uses"]) {
+    const v = s[key];
+    if (v === void 0) continue;
+    if (!Array.isArray(v) || v.some((x2) => typeof x2 !== "string" || !SERVICE_RE.test(x2))) {
+      throw new Error(`manifest.zero.services.${key} must be service names matching ${SERVICE_RE}`);
+    }
+  }
+  return s;
+}
+var ServiceUnavailableError, SERVICE_RE;
+var init_services = __esm({
+  "../zero_addon_sdk/src/services.ts"() {
+    "use strict";
+    ServiceUnavailableError = class extends Error {
+      constructor(service) {
+        super(`No installed add-on provides the "${service}" service`);
+        this.service = service;
+        this.name = "ServiceUnavailableError";
+      }
+    };
+    SERVICE_RE = /^[a-z][a-z0-9-]{1,31}$/;
+  }
+});
+
+// ../zero_addon_sdk/src/spaces.ts
+function validateSpaces(raw) {
+  if (!Array.isArray(raw)) throw new Error("manifest.zero.spaces must be an array");
+  const ids = /* @__PURE__ */ new Set();
+  raw.forEach((s, i) => {
+    const at = `manifest.zero.spaces[${i}]`;
+    if (typeof s?.id !== "string" || !SPACE_ID_RE.test(s.id)) throw new Error(`${at}.id must match ${SPACE_ID_RE}`);
+    if (ids.has(s.id)) throw new Error(`${at}.id "${s.id}" is declared twice`);
+    ids.add(s.id);
+    if (!s.name) throw new Error(`${at}.name is required`);
+    if (!SPACE_LAYOUTS.includes(s.layout)) throw new Error(`${at}.layout must be one of ${SPACE_LAYOUTS.join(", ")}`);
+    if (s.render !== void 0 && s.render !== "catalogs" && s.render !== "addon") throw new Error(`${at}.render must be "catalogs" or "addon"`);
+    if ((s.render ?? "catalogs") === "catalogs" && (!Array.isArray(s.types) || s.types.length === 0)) {
+      throw new Error(`${at}.types must list the content types of its home catalogs`);
+    }
+  });
+  return raw;
+}
+var SPACE_LAYOUTS, SPACE_ID_RE;
+var init_spaces = __esm({
+  "../zero_addon_sdk/src/spaces.ts"() {
+    "use strict";
+    SPACE_LAYOUTS = ["video", "music"];
+    SPACE_ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
+  }
+});
+
 // ../zero_addon_sdk/src/manifest.ts
-var SDK_PROTOCOL_VERSION = 2;
+function validateManifest(raw) {
+  if (typeof raw !== "object" || raw === null) throw new Error("manifest must be an object");
+  const m2 = raw;
+  for (const field of ["id", "name", "version"]) {
+    if (typeof m2[field] !== "string" || m2[field].length === 0) {
+      throw new Error(`manifest.${field} must be a non-empty string`);
+    }
+  }
+  for (const field of ["resources", "types", "idPrefixes"]) {
+    const v = m2[field];
+    if (v !== void 0 && (!Array.isArray(v) || v.some((x2) => typeof x2 !== "string"))) {
+      throw new Error(`manifest.${field} must be an array of strings`);
+    }
+  }
+  if (m2.provides !== void 0) validateProvides(m2.provides);
+  const zero = m2.zero;
+  if (typeof zero !== "object" || zero === null) throw new Error("manifest.zero block is required");
+  if (typeof zero.kind !== "string" || zero.kind.length === 0) {
+    throw new Error("manifest.zero.kind must be a non-empty string");
+  }
+  if (zero.repo !== void 0 && !/^[\w.-]+\/[\w.-]+$/.test(String(zero.repo))) {
+    throw new Error('manifest.zero.repo must look like "owner/name"');
+  }
+  if (zero.builtin !== true && zero.repo === void 0 && zero.bundleUrl === void 0) {
+    throw new Error("manifest.zero needs `repo` (preferred) or `bundleUrl` \u2014 nothing to install otherwise");
+  }
+  if (zero.sdk !== void 0 && (typeof zero.sdk !== "number" || !Number.isInteger(zero.sdk) || zero.sdk < 1)) {
+    throw new Error("manifest.zero.sdk must be a protocol number");
+  }
+  if (zero.sdk !== void 0 && zero.sdk >= 3) validateProtocol3(zero);
+  return raw;
+}
+function validateProtocol3(zero) {
+  for (const legacy of ["tabs", "configKeys", "features", "install"]) {
+    if (zero[legacy] !== void 0) throw new Error(`manifest.zero.${legacy} is protocol \u2264 2 \u2014 see PROTOCOL.md "Protocol 3"`);
+  }
+  const settings2 = zero.settings === void 0 ? [] : validateSettings(zero.settings);
+  const actionIds = /* @__PURE__ */ new Set();
+  for (const [i, a] of (zero.actions ?? []).entries()) {
+    if (typeof a?.id !== "string" || !ACTION_ID_RE.test(a.id)) throw new Error(`manifest.zero.actions[${i}].id must match ${ACTION_ID_RE}`);
+    if (actionIds.has(a.id)) throw new Error(`manifest.zero.actions: "${a.id}" is declared twice`);
+    actionIds.add(a.id);
+  }
+  const routeIds = /* @__PURE__ */ new Set();
+  const routeKeys = /* @__PURE__ */ new Set();
+  for (const [i, r] of (zero.routes ?? []).entries()) {
+    const at = `manifest.zero.routes[${i}]`;
+    if (typeof r?.id !== "string" || !ACTION_ID_RE.test(r.id)) throw new Error(`${at}.id must match ${ACTION_ID_RE}`);
+    if (routeIds.has(r.id)) throw new Error(`${at}.id "${r.id}" is declared twice`);
+    routeIds.add(r.id);
+    if (typeof r.path !== "string" || !r.path || !r.path.split("/").every((seg) => ROUTE_SEGMENT_RE.test(seg))) {
+      throw new Error(`${at}.path must be segments like "hls/:token"`);
+    }
+    if (!Array.isArray(r.methods) || r.methods.length === 0 || r.methods.some((m2) => !METHODS.includes(m2))) {
+      throw new Error(`${at}.methods must list HTTP methods (${METHODS.join(", ")})`);
+    }
+    if (!["public", "user", "admin"].includes(r.access)) throw new Error(`${at}.access must be public, user or admin`);
+    const shape = r.path.replace(/:[a-zA-Z0-9]+/g, ":");
+    for (const m2 of r.methods) {
+      if (routeKeys.has(`${m2} ${shape}`)) throw new Error(`${at}: another route already answers ${m2} ${r.path}`);
+      routeKeys.add(`${m2} ${shape}`);
+    }
+  }
+  if (zero.spaces !== void 0) validateSpaces(zero.spaces);
+  if (zero.services !== void 0) validateServices(zero.services);
+  if (zero.ui !== void 0) validateUi(zero.ui, new Set(settings2.map((f) => f.key)), actionIds);
+}
+function validateProvides(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    throw new Error("manifest.provides must be an object of role \u2192 categories");
+  }
+  for (const [role, cats] of Object.entries(raw)) {
+    if (!isRole(role)) throw new Error(`manifest.provides: unknown role "${role}" (roles: ${ROLES.join(", ")})`);
+    if (!Array.isArray(cats) || cats.length === 0) {
+      throw new Error(`manifest.provides.${role} must be a non-empty array of categories`);
+    }
+    for (const c of cats) {
+      if (!isCategory(c)) {
+        throw new Error(`manifest.provides.${role}: unknown category "${String(c)}" (categories: ${CATEGORIES.join(", ")})`);
+      }
+    }
+  }
+}
+function bundleUrlAt(manifest2, ref) {
+  const { repo, branch, bundlePath, bundleUrl } = manifest2.zero;
+  if (!repo) {
+    if (!bundleUrl) throw new Error("manifest has neither zero.repo nor zero.bundleUrl");
+    return bundleUrl;
+  }
+  const at = ref || branch || DEFAULT_BRANCH;
+  return `https://raw.githubusercontent.com/${repo}/${at}/${bundlePath || DEFAULT_BUNDLE_PATH}`;
+}
+var SDK_PROTOCOL_VERSION, DEFAULT_BRANCH, DEFAULT_BUNDLE_PATH, ACTION_ID_RE, ROUTE_SEGMENT_RE, METHODS;
+var init_manifest = __esm({
+  "../zero_addon_sdk/src/manifest.ts"() {
+    "use strict";
+    init_services();
+    init_spaces();
+    init_capabilities();
+    init_settings();
+    init_ui();
+    SDK_PROTOCOL_VERSION = 3;
+    DEFAULT_BRANCH = "release";
+    DEFAULT_BUNDLE_PATH = "dist/index.mjs";
+    ACTION_ID_RE = /^[a-z][a-zA-Z0-9-]{0,60}$/;
+    ROUTE_SEGMENT_RE = /^(?::[a-zA-Z][a-zA-Z0-9]*|[a-z0-9][a-z0-9._-]*)$/;
+    METHODS = ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"];
+  }
+});
+
+// ../zero_addon_sdk/src/host.ts
+function consoleLogger(prefix = "addon") {
+  const line = (level, category, message) => console.log(`[${prefix}:${level}] ${category}: ${message}`);
+  return {
+    info: (c, m2) => line("info", c, m2),
+    success: (c, m2) => line("ok", c, m2),
+    warn: (c, m2) => line("warn", c, m2),
+    error: (c, m2, e) => console.error(`[${prefix}:error] ${c}: ${m2}`, e ?? "")
+  };
+}
+var init_host = __esm({
+  "../zero_addon_sdk/src/host.ts"() {
+    "use strict";
+  }
+});
 
 // ../zero_addon_sdk/src/addon.ts
 function defineAddon(def) {
   return {
     manifest: def.manifest,
     async register(host) {
-      const { resources: resources2 = {}, api } = await def.setup(host);
-      return { sdk: SDK_PROTOCOL_VERSION, manifest: def.manifest, resources: resources2, api };
+      const { resources: resources2 = {}, actions = {}, routes = {}, services = {}, api } = await def.setup(host);
+      const sdk = def.manifest.zero.sdk ?? Math.min(2, SDK_PROTOCOL_VERSION);
+      return { sdk, manifest: def.manifest, resources: resources2, actions, routes, services, ...api !== void 0 ? { api } : {} };
     }
   };
 }
+function isAddonInstance(value) {
+  return typeof value === "object" && value !== null && typeof value.sdk === "number" && typeof value.manifest === "object";
+}
+var init_addon = __esm({
+  "../zero_addon_sdk/src/addon.ts"() {
+    "use strict";
+    init_manifest();
+  }
+});
+
+// ../zero_addon_sdk/src/router.ts
+function parseResourcePath(segments, extra = {}) {
+  if (segments.length < 3) return null;
+  const [resource, type, ...idParts] = segments;
+  const idRaw = idParts.join("/");
+  const id = decodeURIComponent(idRaw.replace(/\.json$/i, ""));
+  if (!resource || !type || !id) return null;
+  return { resource, type, id, extra };
+}
+async function routeResourceRequest(addon2, segments, extra = {}, context) {
+  if (segments.length === 1 && /^manifest\.json$/i.test(segments[0])) {
+    return { status: 200, body: addon2.manifest };
+  }
+  const parsed = parseResourcePath(segments, extra);
+  const req = parsed && context ? { ...parsed, context } : parsed;
+  if (!req) {
+    return { status: 400, body: { error: "expected <resource>/<type>/<id>.json" } };
+  }
+  const handler = addon2.resources[req.resource];
+  if (!handler) {
+    return {
+      status: 404,
+      body: { error: `addon does not serve resource "${req.resource}"`, resources: Object.keys(addon2.resources) }
+    };
+  }
+  try {
+    const body = await handler(req) ?? {};
+    const why = checkResponse(req.resource, body);
+    if (why) return { status: 502, body: { error: `addon response does not conform: ${why}` } };
+    return { status: 200, body };
+  } catch (err) {
+    return { status: 502, body: { error: err.message || "addon handler failed" } };
+  }
+}
+async function runAction(addon2, id, input, context) {
+  const declared = (addon2.manifest.zero.actions ?? []).some((a) => a.id === id);
+  const handler = addon2.actions[id];
+  if (!declared || !handler) return { ok: false, message: `unknown action "${id}"` };
+  try {
+    const result = await handler(input, context);
+    if (typeof result !== "object" || result === null || typeof result.ok !== "boolean") {
+      return { ok: false, message: `action "${id}" answered without { ok }` };
+    }
+    if (result.rows !== void 0 && !Array.isArray(result.rows)) return { ok: false, message: `action "${id}": rows must be an array` };
+    if (result.items !== void 0 && !Array.isArray(result.items)) return { ok: false, message: `action "${id}": items must be an array` };
+    return result;
+  } catch (err) {
+    return { ok: false, message: err.message || `action "${id}" failed` };
+  }
+}
+function matchRoute(addon2, method, path) {
+  const segs = path.split("/").filter(Boolean).map((s) => decodeURIComponent(s));
+  let best = null;
+  for (const route of addon2.manifest.zero.routes ?? []) {
+    if (!route.methods.includes(method)) continue;
+    const parts = route.path.split("/");
+    if (parts.length !== segs.length) continue;
+    const params = {};
+    let score = 0;
+    let ok = true;
+    for (let i = 0; i < parts.length; i += 1) {
+      if (parts[i].startsWith(":")) params[parts[i].slice(1)] = segs[i];
+      else if (parts[i] === segs[i]) score += 1;
+      else {
+        ok = false;
+        break;
+      }
+    }
+    if (ok && (!best || score > best.score)) best = { route, params, score };
+  }
+  const handler = best && addon2.routes[best.route.id];
+  return best && handler ? { route: best.route, handler, params: best.params } : null;
+}
+var init_router = __esm({
+  "../zero_addon_sdk/src/router.ts"() {
+    "use strict";
+    init_responses();
+  }
+});
+
+// ../zero_addon_sdk/src/projection.ts
+function detectProjection(rawTitle, opts = {}) {
+  const t = ` ${rawTitle.toLowerCase().replace(/[._\-]+/g, " ")} `;
+  const has = (re) => re.test(t);
+  let stereo = "mono";
+  if (has(/\bmono\b/)) {
+    stereo = "mono";
+  } else if (has(/\b(tb|ou|htab|hou|3dv|over[- ]?under|top[- ]?bottom)\b/)) {
+    stereo = "tb";
+  } else if (has(/\b(sbs|lr|hsbs|fsbs|3dh|half[- ]?sbs|full[- ]?sbs|side[- ]?by[- ]?side)\b/)) {
+    stereo = "sbs";
+  }
+  if (has(/\bmkx220\b/)) return immersive("mkx220", 220, stereo);
+  if (has(/\bmkx200\b/)) return immersive("mkx200", 200, stereo);
+  if (has(/\bvrca220\b/)) return immersive("vrca220", 220, stereo);
+  if (has(/\brf52\b/)) return immersive("rf52", 190, stereo);
+  if (has(/\bfisheye190\b/) || has(/\bfisheye\b/)) {
+    const fov = has(/\b220\b/) ? 220 : has(/\b200\b/) ? 200 : 190;
+    return immersive("fisheye", fov, stereo);
+  }
+  if (has(/\b360\b/)) return immersive("sphere", 360, stereo);
+  if (has(/\b180\b/) || has(/\b180x180\b/)) return immersive("dome", 180, stereo);
+  if (opts.assumeVrWhenHinted && VR_HINT.test(t)) return immersive("dome", 180, stereo);
+  if (has(/\b(sbs|hsbs|fsbs|half[- ]?sbs|full[- ]?sbs|halfsbs|fullsbs|hou|htab|h[- ]?ou|half[- ]?ou|full[- ]?ou|over[- ]?under|top[- ]?bottom|side[- ]?by[- ]?side|3dh|3dv)\b/)) {
+    const s3d = stereo === "mono" ? "sbs" : stereo;
+    return { is3d: true, isVr: false, stereo: s3d, screenType: "flat", fov: 0 };
+  }
+  return { ...FLAT_2D };
+}
+function immersive(screenType, fov, stereo) {
+  const s = stereo === "mono" ? "sbs" : stereo;
+  return { is3d: true, isVr: true, stereo: s, screenType, fov };
+}
+var FLAT_2D, VR_HINT;
+var init_projection = __esm({
+  "../zero_addon_sdk/src/projection.ts"() {
+    "use strict";
+    FLAT_2D = {
+      is3d: false,
+      isVr: false,
+      stereo: "mono",
+      screenType: "flat",
+      fov: 0
+    };
+    VR_HINT = /\bvr\b|vrporn|czechvr|wankzvr|badoinkvr|vrbangers|vrhush|vrcosplay|vrconk|sexbabesvr|realjamvr|milfvr|18vr|vrallure|vrlatina|tmwvrnet|virtualreal|naughtyamericavr|\bslr\b/;
+  }
+});
+
+// ../zero_addon_sdk/src/conformance.ts
+function checkAddon(addon2) {
+  const problems = [];
+  try {
+    validateManifest(addon2.manifest);
+  } catch (err) {
+    return [err.message];
+  }
+  const m2 = addon2.manifest;
+  const declared = new Set(m2.resources ?? []);
+  const handled = new Set(Object.keys(addon2.resources));
+  if (!m2.provides || Object.keys(m2.provides).length === 0) {
+    problems.push("manifest.provides is empty \u2014 the server will never offer this addon to a library");
+  }
+  for (const [role, cats] of Object.entries(m2.provides ?? {})) {
+    if (!isRole(role) || !cats?.length) continue;
+    for (const r of ROLE_RESOURCES[role].required) {
+      if (!handled.has(r)) problems.push(`provides.${role} needs a "${r}" handler`);
+      if (!declared.has(r)) problems.push(`provides.${role} needs "${r}" in manifest.resources`);
+    }
+  }
+  for (const r of declared) {
+    if (!handled.has(r)) problems.push(`manifest.resources lists "${r}" but there is no handler`);
+  }
+  for (const r of handled) {
+    if (!declared.has(r)) problems.push(`handler "${r}" is not listed in manifest.resources`);
+  }
+  const reachable = new Set(requiredResources(m2.provides));
+  for (const role of Object.keys(m2.provides ?? {})) {
+    if (isRole(role)) for (const r of ROLE_RESOURCES[role].optional) reachable.add(r);
+  }
+  for (const r of handled) {
+    if (r !== "playback" && r !== "automation" && r !== "space" && !reachable.has(r)) {
+      problems.push(`handler "${r}" belongs to no role in provides`);
+    }
+  }
+  if ((m2.zero.sdk ?? 0) >= 3) problems.push(...checkProtocol3(addon2));
+  return problems;
+}
+function checkProtocol3(addon2) {
+  const problems = [];
+  const z2 = addon2.manifest.zero;
+  if (addon2.api !== void 0) problems.push("protocol 3 addons must not export `api` \u2014 use resources, actions and routes");
+  const pair = (what, declared, handled) => {
+    for (const id of declared) if (!handled.includes(id)) problems.push(`${what} "${id}" is declared but has no handler`);
+    for (const id of handled) if (!declared.includes(id)) problems.push(`${what} handler "${id}" is not declared in manifest.zero`);
+  };
+  pair("action", (z2.actions ?? []).map((a) => a.id), Object.keys(addon2.actions));
+  pair("route", (z2.routes ?? []).map((r) => r.id), Object.keys(addon2.routes));
+  for (const id of uiActionIds(z2.ui)) {
+    if (!addon2.actions[id]) problems.push(`the UI calls action "${id}" but there is no handler`);
+  }
+  if ((z2.spaces ?? []).some((s) => s.render === "addon") && !addon2.resources.space) {
+    problems.push('a space with render "addon" needs a "space" handler');
+  }
+  pair("service", z2.services?.provides ?? [], Object.keys(addon2.services ?? {}));
+  return problems;
+}
+async function probeAddon(addon2, requests) {
+  const problems = [];
+  for (const req of requests) {
+    const label = `${req.resource}/${req.type}/${req.id}`;
+    const handler = addon2.resources[req.resource];
+    if (!handler) {
+      problems.push(`${label}: no "${req.resource}" handler`);
+      continue;
+    }
+    try {
+      const body = await handler({ ...req, extra: req.extra ?? {} });
+      const why = checkResponse(req.resource, body);
+      if (why) problems.push(`${label}: ${why}`);
+    } catch (err) {
+      problems.push(`${label}: threw ${err.message}`);
+    }
+  }
+  return problems;
+}
+var init_conformance = __esm({
+  "../zero_addon_sdk/src/conformance.ts"() {
+    "use strict";
+    init_capabilities();
+    init_manifest();
+    init_responses();
+    init_ui();
+  }
+});
+
+// ../zero_addon_sdk/src/index.ts
+var src_exports = {};
+__export(src_exports, {
+  CATEGORIES: () => CATEGORIES,
+  CONTENT_TYPES: () => CONTENT_TYPES,
+  DEFAULT_BRANCH: () => DEFAULT_BRANCH,
+  DEFAULT_BUNDLE_PATH: () => DEFAULT_BUNDLE_PATH,
+  RESOURCES: () => RESOURCES,
+  RESPONSE_KEYS: () => RESPONSE_KEYS,
+  ROLES: () => ROLES,
+  ROLE_RESOURCES: () => ROLE_RESOURCES,
+  SDK_PROTOCOL_VERSION: () => SDK_PROTOCOL_VERSION,
+  SETTING_TYPES: () => SETTING_TYPES,
+  SPACE_LAYOUTS: () => SPACE_LAYOUTS,
+  ServiceUnavailableError: () => ServiceUnavailableError,
+  UI_TAB_GROUPS: () => UI_TAB_GROUPS,
+  bundleUrlAt: () => bundleUrlAt,
+  checkAddon: () => checkAddon,
+  checkResponse: () => checkResponse,
+  checkSettingValue: () => checkSettingValue,
+  consoleLogger: () => consoleLogger,
+  defineAddon: () => defineAddon,
+  detectProjection: () => detectProjection,
+  isAddonInstance: () => isAddonInstance,
+  isCanonicalResource: () => isCanonicalResource,
+  isCanonicalType: () => isCanonicalType,
+  isCategory: () => isCategory,
+  isRole: () => isRole,
+  matchRoute: () => matchRoute,
+  migrate: () => migrate,
+  parseResourcePath: () => parseResourcePath,
+  parseSettingInput: () => parseSettingInput,
+  probeAddon: () => probeAddon,
+  providesFor: () => providesFor,
+  requiredResources: () => requiredResources,
+  resolveSettings: () => resolveSettings,
+  routeResourceRequest: () => routeResourceRequest,
+  runAction: () => runAction,
+  uiActionIds: () => uiActionIds,
+  uiText: () => uiText,
+  validateManifest: () => validateManifest,
+  validateServices: () => validateServices,
+  validateSettings: () => validateSettings,
+  validateSpaces: () => validateSpaces,
+  validateUi: () => validateUi
+});
+var init_src = __esm({
+  "../zero_addon_sdk/src/index.ts"() {
+    "use strict";
+    init_types();
+    init_capabilities();
+    init_responses();
+    init_settings();
+    init_ui();
+    init_storage();
+    init_manifest();
+    init_host();
+    init_addon();
+    init_router();
+    init_services();
+    init_spaces();
+    init_projection();
+    init_conformance();
+  }
+});
+
+// src/plugin.ts
+init_src();
+import { existsSync as existsSync7, readdirSync as readdirSync2 } from "node:fs";
+import { join as join5 } from "node:path";
+
+// src/cookies.ts
+import { createHash } from "node:crypto";
+import { existsSync, promises as fs } from "node:fs";
+import { dirname } from "node:path";
 
 // src/host.ts
-var consoleHost = {
-  logger: {
-    info: (c, m2) => console.log(`[conduit] ${c}: ${m2}`),
-    success: (c, m2) => console.log(`[conduit] ${c}: ${m2}`),
-    warn: (c, m2) => console.warn(`[conduit] ${c}: ${m2}`),
-    error: (c, m2, e) => console.error(`[conduit] ${c}: ${m2}`, e ?? "")
-  }
-};
-var _host = consoleHost;
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+var _host = null;
+var _fallbackDir = null;
 function setConduitHost(host) {
   _host = host;
 }
+function hasConduitHost() {
+  return _host !== null;
+}
 function getConduitHost() {
+  if (!_host) throw new Error("Conduit host not configured \u2014 call setConduitHost() first");
   return _host;
 }
+var log = {
+  info: (c, m2) => _host ? _host.logger.info(c, m2) : console.log(`[conduit] ${c}: ${m2}`),
+  success: (c, m2) => _host ? _host.logger.success(c, m2) : console.log(`[conduit] ${c}: ${m2}`),
+  warn: (c, m2) => _host ? _host.logger.warn(c, m2) : console.warn(`[conduit] ${c}: ${m2}`),
+  error: (c, m2, e) => _host ? _host.logger.error(c, m2, e) : console.error(`[conduit] ${c}: ${m2}`, e ?? "")
+};
+function dataDir() {
+  if (_host) return _host.dataDir;
+  _fallbackDir ??= mkdtempSync(join(tmpdir(), "conduit-"));
+  return _fallbackDir;
+}
+async function settings() {
+  if (!_host) return {};
+  try {
+    return await _host.settings.get();
+  } catch {
+    return {};
+  }
+}
+function egress(hostname) {
+  return _host ? _host.services.egress(hostname) : { mode: "direct" };
+}
 
-// src/ytdlpStream.ts
-var ytdlpStream_exports = {};
-__export(ytdlpStream_exports, {
-  extractYouTubeId: () => extractYouTubeId,
-  parseStreamExpiry: () => parseStreamExpiry,
-  resolveYouTubeStream: () => resolveYouTubeStream
+// src/cookies.ts
+function countYoutubeRows(content) {
+  return content.split("\n").filter((l) => /youtube\.com/i.test(l) && !l.trimStart().startsWith("#")).length;
+}
+function cookiesProblem(content) {
+  const text = content.replace(/\r\n/g, "\n").trim();
+  if (!text) return null;
+  const looksLikeCookies = /^#\s*(Netscape|HTTP) Cookie File/im.test(text) || countYoutubeRows(text) > 0;
+  return looksLikeCookies ? null : "That doesn't look like a cookies.txt \u2014 no youtube.com cookies found.";
+}
+var lastHash = null;
+async function syncCookies(file) {
+  const raw = String((await settings()).youtube_cookies ?? "").replace(/\r\n/g, "\n").trim();
+  const usable = raw && !cookiesProblem(raw) ? raw : "";
+  const hash = createHash("sha256").update(usable).digest("hex");
+  if (hash === lastHash && (usable ? existsSync(file) : !existsSync(file))) return;
+  if (usable) {
+    await fs.mkdir(dirname(file), { recursive: true });
+    await fs.writeFile(file, `${usable}
+`, { mode: 384 });
+  } else {
+    await fs.rm(file, { force: true });
+  }
+  lastHash = hash;
+}
+async function cookiesStatus() {
+  const raw = String((await settings()).youtube_cookies ?? "");
+  const problem = cookiesProblem(raw);
+  const rows = problem ? 0 : countYoutubeRows(raw);
+  return { present: rows > 0, rows, problem };
+}
+
+// manifest.json
+var manifest_default = {
+  id: "zero.conduit",
+  name: "Conduit",
+  version: "2.0.1",
+  description: "yt-dlp online video for Zero Media \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
+  resources: [
+    "catalog",
+    "catalogs",
+    "meta",
+    "stream",
+    "search",
+    "artwork"
+  ],
+  types: [
+    "video",
+    "channel",
+    "trailer",
+    "music",
+    "track",
+    "album",
+    "artist",
+    "playlist",
+    "genre"
+  ],
+  idPrefixes: [
+    "yt:",
+    "yt_id:",
+    "yb:",
+    "UC",
+    "https://www.youtube.com/",
+    "https://youtube.com/",
+    "https://m.youtube.com/",
+    "https://music.youtube.com/",
+    "https://youtu.be/"
+  ],
+  provides: {
+    content: [
+      "videos",
+      "music"
+    ],
+    metadata: [
+      "videos",
+      "music"
+    ],
+    artwork: [
+      "videos",
+      "music"
+    ]
+  },
+  zero: {
+    kind: "videos",
+    sdk: 3,
+    repo: "j4ckgrey/zero_videos",
+    branch: "main",
+    bundlePath: "dist/index.mjs",
+    bundleUrl: "https://raw.githubusercontent.com/j4ckgrey/zero_videos/release/dist/index.mjs",
+    settings: [
+      {
+        key: "music_enabled",
+        type: "toggle",
+        label: "YouTube Music",
+        description: "Music spaces, search and playback from YouTube Music.",
+        default: true
+      },
+      {
+        key: "videos_enabled",
+        type: "toggle",
+        label: "YouTube videos",
+        description: "Video spaces, channels, search and playback from YouTube.",
+        default: true
+      },
+      {
+        key: "youtubio_url",
+        type: "url",
+        label: "YouTubio catalogue",
+        description: "Optional. A Stremio-style YouTube catalogue (its manifest URL) for the rows on the videos home.",
+        placeholder: "https://\u2026/manifest.json"
+      },
+      {
+        key: "youtube_cookies",
+        type: "secret",
+        multiline: true,
+        label: "YouTube cookies (cookies.txt)",
+        description: "From a throwaway Google account. YouTube asks datacenter IPs to \u201Cconfirm you\u2019re not a bot\u201D; signed-in cookies get past it. Paste the whole cookies.txt."
+      }
+    ],
+    actions: [
+      {
+        id: "status"
+      },
+      {
+        id: "rt-list"
+      },
+      {
+        id: "rt-toggle"
+      },
+      {
+        id: "rt-discover"
+      },
+      {
+        id: "update-ytdlp"
+      }
+    ],
+    ui: {
+      tabs: [
+        {
+          id: "youtube",
+          label: "YouTube",
+          icon: "film",
+          group: "content",
+          description: "YouTube videos, YouTube Music and the Rotten Tomatoes trailer rows, through yt-dlp.",
+          sections: [
+            {
+              kind: "status",
+              id: "status",
+              title: "Status",
+              source: "status"
+            },
+            {
+              kind: "form",
+              id: "features",
+              title: "What Conduit serves",
+              fields: [
+                "music_enabled",
+                "videos_enabled",
+                "youtubio_url"
+              ]
+            },
+            {
+              kind: "form",
+              id: "cookies",
+              title: "Sign-in cookies",
+              fields: [
+                "youtube_cookies"
+              ]
+            },
+            {
+              kind: "table",
+              id: "rt",
+              title: "Rotten Tomatoes trailers",
+              description: "Each enabled playlist becomes a trailer row on the home screen.",
+              rows: "rt-list",
+              columns: [
+                {
+                  key: "title",
+                  label: "Playlist"
+                },
+                {
+                  key: "videos",
+                  label: "Videos",
+                  format: "number"
+                },
+                {
+                  key: "enabled",
+                  label: "Shown",
+                  format: "bool"
+                }
+              ],
+              rowButtons: [
+                {
+                  action: "rt-toggle",
+                  label: "Show / hide"
+                }
+              ],
+              empty: "No playlists yet \u2014 press Discover playlists."
+            },
+            {
+              kind: "buttons",
+              id: "tools",
+              title: "Tools",
+              buttons: [
+                {
+                  action: "rt-discover",
+                  label: "Discover playlists"
+                },
+                {
+                  action: "update-ytdlp",
+                  label: "Update yt-dlp"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    spaces: [
+      {
+        id: "music",
+        name: {
+          en: "Music",
+          de: "Musik",
+          fr: "Musique",
+          it: "Musica",
+          es: "M\xFAsica",
+          nl: "Muziek",
+          pt: "M\xFAsica",
+          zh: "\u97F3\u4E50"
+        },
+        icon: "music",
+        layout: "music",
+        types: [
+          "track",
+          "album",
+          "artist",
+          "playlist",
+          "genre"
+        ]
+      },
+      {
+        id: "videos",
+        name: {
+          en: "Videos",
+          de: "Videos",
+          fr: "Vid\xE9os",
+          it: "Video",
+          es: "V\xEDdeos",
+          nl: "Video's",
+          pt: "V\xEDdeos",
+          zh: "\u89C6\u9891"
+        },
+        icon: "video",
+        layout: "video",
+        types: [
+          "video",
+          "channel",
+          "playlist"
+        ]
+      }
+    ]
+  },
+  catalogs: [
+    {
+      id: "made-for-you",
+      type: "track",
+      name: "Made for you",
+      names: {
+        en: "Made for you",
+        de: "F\xFCr dich",
+        es: "Hecho para ti",
+        fr: "Pour vous",
+        it: "Per te",
+        nl: "Voor jou",
+        pt: "Feito para voc\xEA",
+        zh: "\u4E3A\u4F60\u63A8\u8350"
+      },
+      extra: [
+        "seeds"
+      ]
+    },
+    {
+      id: "trending",
+      type: "track",
+      name: "Trending",
+      names: {
+        en: "Trending",
+        de: "Angesagt",
+        es: "Tendencias",
+        fr: "Tendances",
+        it: "Di tendenza",
+        nl: "Trending",
+        pt: "Em alta",
+        zh: "\u70ED\u95E8"
+      },
+      extra: [
+        "genre"
+      ]
+    },
+    {
+      id: "new-releases",
+      type: "album",
+      name: "New releases",
+      names: {
+        en: "New releases",
+        de: "Neuerscheinungen",
+        es: "Novedades",
+        fr: "Nouveaut\xE9s",
+        it: "Nuove uscite",
+        nl: "Nieuwe releases",
+        pt: "Lan\xE7amentos",
+        zh: "\u65B0\u53D1\u884C"
+      },
+      extra: [
+        "genre"
+      ]
+    },
+    {
+      id: "popular",
+      type: "artist",
+      name: "Popular artists",
+      names: {
+        en: "Popular artists",
+        de: "Beliebte K\xFCnstler",
+        es: "Artistas populares",
+        fr: "Artistes populaires",
+        it: "Artisti popolari",
+        nl: "Populaire artiesten",
+        pt: "Artistas populares",
+        zh: "\u70ED\u95E8\u827A\u4EBA"
+      },
+      extra: [
+        "genre"
+      ]
+    },
+    {
+      id: "community",
+      type: "playlist",
+      name: "Community playlists",
+      names: {
+        en: "Community playlists",
+        de: "Community-Playlists",
+        es: "Listas de la comunidad",
+        fr: "Playlists de la communaut\xE9",
+        it: "Playlist della community",
+        nl: "Community-playlists",
+        pt: "Playlists da comunidade",
+        zh: "\u793E\u533A\u6B4C\u5355"
+      },
+      extra: [
+        "genre"
+      ]
+    },
+    {
+      id: "moods",
+      type: "playlist",
+      name: "Moods & moments",
+      names: {
+        en: "Moods & moments",
+        de: "Stimmungen",
+        es: "Estados de \xE1nimo",
+        fr: "Humeurs",
+        it: "Mood e momenti",
+        nl: "Stemmingen",
+        pt: "Climas e momentos",
+        zh: "\u5FC3\u60C5\u4E0E\u65F6\u523B"
+      }
+    },
+    {
+      id: "genres",
+      type: "genre",
+      name: "Genres",
+      names: {
+        en: "Genres",
+        de: "Genres",
+        es: "G\xE9neros",
+        fr: "Genres",
+        it: "Generi",
+        nl: "Genres",
+        pt: "G\xEAneros",
+        zh: "\u6D41\u6D3E"
+      }
+    }
+  ]
+};
+
+// src/ytdlpVideos.ts
+var ytdlpVideos_exports = {};
+__export(ytdlpVideos_exports, {
+  APPROX_DATE_OPTS: () => APPROX_DATE_OPTS,
+  CHANNEL_SEARCH_SP: () => CHANNEL_SEARCH_SP,
+  entryToChannelMeta: () => entryToChannelMeta,
+  entryToVideoMeta: () => entryToVideoMeta,
+  formatSeconds: () => formatSeconds,
+  formatYtdlpDate: () => formatYtdlpDate,
+  isoDateFromEpoch: () => isoDateFromEpoch,
+  ytdlp: () => ytdlp
 });
 
 // src/ytdlpBinary.ts
-import { existsSync as existsSync5 } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { existsSync as existsSync6, readdirSync } from "node:fs";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { join as join4 } from "node:path";
 
 // node_modules/ytdlp-nodejs/dist/index.mjs
 import { fileURLToPath as Pe } from "url";
@@ -990,38 +2281,381 @@ var we = class {
 };
 
 // src/ytdlpBinary.ts
-var YTDLP_BINARY_PATH = fileURLToPath(new URL("./bin/yt-dlp", import.meta.url));
-var PLUGIN_DIR = fileURLToPath(new URL("../../ytdlp-po/plugins", import.meta.url));
-var YTDLP_COOKIES_FILE = fileURLToPath(new URL("../../ytdlp-po/cookies.txt", import.meta.url));
-var YT_EGRESS_HOST = "www.youtube.com";
-function applyEgress(opts) {
-  const plan = getConduitHost().resolveEgress?.(YT_EGRESS_HOST);
-  if (!plan) return;
-  if (plan.mode === "blocked") {
-    throw new Error(
-      "VPN kill switch is on and the tunnel is down \u2014 refusing to run yt-dlp direct."
-    );
-  }
-  if (plan.mode === "tunnel" && plan.sourceAddress) {
-    opts.sourceAddress = plan.sourceAddress;
-  }
+var YTDLP_RELEASE_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp";
+var POT_PLUGIN_URL = "https://github.com/Brainicism/bgutil-ytdlp-pot-provider/releases/latest/download/bgutil-ytdlp-pot-provider.zip";
+var binDir = () => join4(dataDir(), "bin");
+var ytdlpBinaryPath = () => join4(binDir(), "yt-dlp");
+var cookiesFile = () => join4(dataDir(), "cookies.txt");
+var pluginDir = () => join4(binDir(), "yt-dlp-plugins");
+async function download(url, dest, mode) {
+  const res = await fetch(url, { signal: AbortSignal.timeout(18e4), redirect: "follow" });
+  if (!res.ok) throw new Error(`download failed: HTTP ${res.status} for ${url}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  await writeFile(dest, buf, mode ? { mode } : void 0);
+  if (mode) await chmod(dest, mode);
+  return buf.length;
 }
+var provisioning = null;
+function ensureYtDlp() {
+  provisioning ??= (async () => {
+    await mkdir(binDir(), { recursive: true });
+    if (!existsSync6(ytdlpBinaryPath())) {
+      const size = await download(YTDLP_RELEASE_URL, ytdlpBinaryPath(), 493);
+      log.success("yt-dlp", `Fetched yt-dlp (${(size / 1e6).toFixed(1)} MB)`);
+    }
+    const conf = join4(binDir(), "yt-dlp.conf");
+    if (!existsSync6(conf)) await writeFile(conf, "--js-runtimes node\n");
+    if (!existsSync6(pluginDir()) || readdirSync(pluginDir()).length === 0) {
+      await mkdir(pluginDir(), { recursive: true });
+      try {
+        await download(POT_PLUGIN_URL, join4(pluginDir(), "bgutil-ytdlp-pot-provider.zip"));
+        log.success("yt-dlp", "Fetched the PO-token provider plugin");
+      } catch (err) {
+        log.warn("yt-dlp", `PO-token plugin not fetched: ${err.message}`);
+      }
+    }
+  })().catch((err) => {
+    provisioning = null;
+    throw err;
+  });
+  return provisioning;
+}
+async function updateYtDlp() {
+  await mkdir(binDir(), { recursive: true });
+  const size = await download(YTDLP_RELEASE_URL, ytdlpBinaryPath(), 493);
+  instances.forEach((reset) => reset());
+  return `yt-dlp updated (${(size / 1e6).toFixed(1)} MB)`;
+}
+var YT_EGRESS_HOST = "www.youtube.com";
 function ytCommonOptions() {
   const opts = {};
-  if (existsSync5(PLUGIN_DIR)) opts.pluginDirs = [PLUGIN_DIR];
-  if (existsSync5(YTDLP_COOKIES_FILE)) opts.cookies = YTDLP_COOKIES_FILE;
-  applyEgress(opts);
+  if (existsSync6(cookiesFile())) opts.cookies = cookiesFile();
+  const plan = egress(YT_EGRESS_HOST);
+  if (plan.mode === "blocked") throw new Error("VPN kill switch is on and the tunnel is down \u2014 refusing to run yt-dlp direct.");
+  if (plan.mode === "tunnel" && plan.sourceAddress) opts.sourceAddress = plan.sourceAddress;
   return opts;
 }
+var instances = [];
 function makeYtDlp() {
-  const inst = new we({ binaryPath: YTDLP_BINARY_PATH });
-  const orig = inst.getInfoAsync.bind(inst);
-  inst.getInfoAsync = ((url, opts) => orig(url, { ...ytCommonOptions(), ...opts ?? {} }));
-  return inst;
+  let real = null;
+  instances.push(() => {
+    real = null;
+  });
+  const get = () => real ??= new we({ binaryPath: ytdlpBinaryPath() });
+  return new Proxy({}, {
+    get(_target, prop) {
+      if (prop === "getInfoAsync") {
+        return async (url, opts) => {
+          await ensureYtDlp();
+          await syncCookies(cookiesFile());
+          const inst2 = get();
+          return inst2.getInfoAsync(url, { ...ytCommonOptions(), ...opts ?? {} });
+        };
+      }
+      const inst = get();
+      const value = inst[prop];
+      return typeof value === "function" ? value.bind(inst) : value;
+    }
+  });
+}
+
+// src/ytdlpVideos.ts
+var ytdlp = makeYtDlp();
+var APPROX_DATE_OPTS = {
+  extractorArgs: { youtubetab: ["approximate_date"] }
+};
+var CHANNEL_SEARCH_SP = "EgIQAg%3D%3D";
+function formatYtdlpDate(raw) {
+  if (typeof raw !== "string") return void 0;
+  const m2 = /^(\d{4})(\d{2})(\d{2})$/.exec(raw);
+  return m2 ? `${m2[1]}-${m2[2]}-${m2[3]}` : void 0;
+}
+function isoDateFromEpoch(raw) {
+  const secs = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(secs) || secs <= 0) return void 0;
+  const d = new Date(secs * 1e3);
+  return Number.isNaN(d.getTime()) ? void 0 : d.toISOString().slice(0, 10);
+}
+function formatSeconds(raw) {
+  const secs = typeof raw === "number" ? raw : Number(raw);
+  if (!Number.isFinite(secs) || secs <= 0) return void 0;
+  const total = Math.round(secs);
+  const h2 = Math.floor(total / 3600);
+  const m2 = Math.floor(total % 3600 / 60);
+  const s = total % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h2 > 0 ? `${h2}:${pad(m2)}:${pad(s)}` : `${m2}:${pad(s)}`;
+}
+function httpsThumb(url) {
+  if (typeof url !== "string" || !url) return void 0;
+  return url.startsWith("//") ? `https:${url}` : url;
+}
+function entryToVideoMeta(entry) {
+  const thumbnail = entry.thumbnail && String(entry.thumbnail).startsWith("http") ? entry.thumbnail : `https://i.ytimg.com/vi/${entry.id}/hqdefault.jpg`;
+  const releaseInfo = isoDateFromEpoch(entry.timestamp) ?? formatYtdlpDate(entry.upload_date);
+  const runtime = formatSeconds(entry.duration);
+  const channelName = entry.uploader || entry.channel;
+  const channelUrl = entry.uploader_url || entry.channel_url;
+  return {
+    id: `yt_id:${entry.id}`,
+    type: "video",
+    name: entry.title,
+    description: entry.description || "",
+    poster: thumbnail,
+    posterShape: "landscape",
+    subtitle: channelName ?? null,
+    duration: typeof entry.duration === "number" ? entry.duration : null,
+    releaseInfo,
+    runtime,
+    links: [
+      ...channelName ? [
+        {
+          name: channelName,
+          category: "Directors",
+          url: channelUrl || `https://www.youtube.com/watch?v=${entry.id}`
+        }
+      ] : [],
+      {
+        name: "YouTube",
+        category: "stream",
+        url: `https://www.youtube.com/watch?v=${entry.id}`
+      }
+    ]
+  };
+}
+function entryToChannelMeta(entry) {
+  const thumbs = Array.isArray(entry.thumbnails) ? entry.thumbnails : [];
+  const avatar = httpsThumb(thumbs.length ? thumbs[thumbs.length - 1].url : "");
+  return {
+    id: entry.channel_id || entry.id,
+    name: entry.channel || entry.title || "",
+    avatar,
+    subscribers: typeof entry.channel_follower_count === "number" ? entry.channel_follower_count : null,
+    verified: !!entry.channel_is_verified,
+    description: entry.description || "",
+    url: entry.channel_url || entry.url || ""
+  };
+}
+
+// src/rt.ts
+var RT_CHANNEL_URL = "https://www.youtube.com/channel/UCi8e0iOVk1fEOogdfu4YgfA";
+var MAX_VIDEOS_PER_PLAYLIST = 40;
+var YTDLP_INFO_TIMEOUT_MS = 6e4;
+function db() {
+  return getConduitHost().storage;
+}
+var migrated = /* @__PURE__ */ new WeakMap();
+function migrateStorage() {
+  const storage = db();
+  let done = migrated.get(storage);
+  if (done) return done;
+  done = (async () => {
+    const { migrate: migrate2 } = await Promise.resolve().then(() => (init_src(), src_exports));
+    await migrate2(storage, [
+      `CREATE TABLE rt_playlists (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        video_count INTEGER NOT NULL DEFAULT 0,
+        position INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      )`
+    ]);
+  })();
+  migrated.set(storage, done);
+  return done;
+}
+function withTimeout(p, what) {
+  return Promise.race([p, new Promise((_2, reject) => setTimeout(() => reject(new Error(`${what} timed out`)), YTDLP_INFO_TIMEOUT_MS))]);
+}
+async function listRtPlaylists() {
+  if (!hasConduitHost()) return [];
+  await migrateStorage();
+  const rows = await db().all(
+    "SELECT id, title, video_count, position, enabled FROM rt_playlists ORDER BY position"
+  );
+  return rows.map((r) => ({ id: r.id, title: r.title, videoCount: r.video_count, position: r.position, enabled: r.enabled === 1 }));
+}
+async function setRtPlaylistEnabled(id, enabled2) {
+  await migrateStorage();
+  await db().run("UPDATE rt_playlists SET enabled = ? WHERE id = ?", [enabled2 ? 1 : 0, id]);
+}
+async function discoverRtPlaylists() {
+  await migrateStorage();
+  const info = await withTimeout(ytdlp.getInfoAsync(`${RT_CHANNEL_URL}/playlists`, { flatPlaylist: true }), "playlist discovery");
+  const entries = info.entries ?? [];
+  let n = 0;
+  for (const [i, e] of entries.entries()) {
+    if (!e?.id || !e?.title) continue;
+    const id = e.id.startsWith("PL") ? e.id : (e.url ?? "").match(/list=([^&]+)/)?.[1] ?? e.id;
+    await db().run(
+      `INSERT INTO rt_playlists (id, title, video_count, position) VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET title = excluded.title, video_count = excluded.video_count, position = excluded.position, updated_at = unixepoch()`,
+      [id, e.title, e.playlist_count ?? 0, i]
+    );
+    n += 1;
+  }
+  log.info("rt-trailers", `Discovered ${n} Rotten Tomatoes playlists`);
+  return n;
+}
+async function rtCatalogs() {
+  return (await listRtPlaylists()).filter((p) => p.enabled).map((p) => ({ id: `rt:${p.id}`, type: "trailer", name: p.title, group: "rotten-tomatoes", groupNames: { en: "Rotten Tomatoes" } }));
+}
+async function rtCatalogItems(playlistId) {
+  const info = await withTimeout(
+    ytdlp.getInfoAsync(`https://www.youtube.com/playlist?list=${playlistId}`, { ...APPROX_DATE_OPTS, playlistEnd: MAX_VIDEOS_PER_PLAYLIST }),
+    "playlist fetch"
+  );
+  const entries = info.entries ?? [];
+  const out = [];
+  for (const e of entries) {
+    if (!e?.id || !e?.title) continue;
+    const parsed = parseTrailerTitle(e.title);
+    if (parsed.isCompilation) continue;
+    const uploaded = e.upload_date ? `${e.upload_date.slice(0, 4)}-${e.upload_date.slice(4, 6)}-${e.upload_date.slice(6, 8)}` : null;
+    out.push({
+      id: `yt:${e.id}`,
+      type: "trailer",
+      name: parsed.name,
+      // The title as shown on the card: the variant tells the uploads of one film apart.
+      title: buildRtDisplayTitle(parsed.name, parsed.variant),
+      year: parsed.year,
+      variant: parsed.variant,
+      releaseInfo: uploaded,
+      duration: e.duration ?? null,
+      poster: `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg`,
+      posterShape: "landscape",
+      description: e.title
+    });
+  }
+  return out;
+}
+function parseTrailerTitle(raw) {
+  if (/new\s+trailers\s+this\s+week/i.test(raw) || /\bweekly\b.*#\d+/i.test(raw) || /\bnew\s+(movie\s+)?trailers\s+\d{4}/i.test(raw)) {
+    return { name: raw, year: null, variant: null, isCompilation: true };
+  }
+  let s = raw.trim();
+  let year = null;
+  const yearMatch = s.match(/\((\d{4})\)/);
+  if (yearMatch) {
+    year = parseInt(yearMatch[1], 10);
+    if (year < 1900 || year > 2100) year = null;
+  } else {
+    const yearEnd = s.match(/\b(20[1-9]\d)\s*$/);
+    if (yearEnd) year = parseInt(yearEnd[1], 10);
+  }
+  s = s.replace(/\((\d{4})\)/g, " ").replace(/\s{2,}/g, " ").trim();
+  const isBigGame = /\b(big\s+game|super\s*bowl)\b/i.test(s);
+  let variant = null;
+  const numMatch = s.match(/\btrailer\s*#?\s*(\d{1,2})\b/i) || s.match(/\bteaser\s*#\s*(\d{1,2})\b/i);
+  if (numMatch) variant = `Trailer #${numMatch[1]}`;
+  else if (/\bteaser\b/i.test(s)) variant = "Teaser";
+  else if (/\bfinal\s+trailer\b/i.test(s)) variant = "Final Trailer";
+  else if (/\bfeaturette\b/i.test(s)) variant = "Featurette";
+  else if (/\btitle\s+reveal\b/i.test(s)) variant = "Title Reveal";
+  else if (/\bannouncement\b/i.test(s)) variant = "Announcement";
+  else if (isBigGame && /\bspot\b/i.test(s)) variant = "Super Bowl Spot";
+  else if (isBigGame && /\btrailer\b/i.test(s)) variant = "Super Bowl Trailer";
+  else if (/\bexclusive\b/i.test(s)) variant = "Exclusive Trailer";
+  else if (/\btrailer\b/i.test(s)) variant = "Trailer";
+  s = s.replace(/\|\s*.*/g, "").trim();
+  s = s.replace(/(^|\s)['"‘’“”]+/g, "$1").replace(/['"‘’“”]+(\s|$)/g, "$1").trim();
+  s = s.replace(
+    /\s*[-–—|:]?\s*(big\s+game|super\s*bowl)\s+(spot|teaser|trailer|clip|first\s+look)\b.*$/i,
+    ""
+  ).trim();
+  s = s.replace(/\b(big\s+game|super\s*bowl)\b/gi, " ").replace(/\s{2,}/g, " ").trim();
+  const cutRe = /\s*[-–—|:]?\s*((official|exclusive|brand\s*new|new|first|last|full|final|international|red\s+band)\s+)*(teaser\s+trailer|teaser|official\s+trailer|trailer|featurette|title\s+reveal|announcement|sneak\s+peek|first\s+look|clip)\b.*$/i;
+  s = s.replace(cutRe, "").trim();
+  s = s.replace(/[\s\-–—|:,#]+$/, "").replace(/\s{2,}/g, " ").trim();
+  return { name: s || raw, year, variant, isCompilation: false };
+}
+function buildRtDisplayTitle(baseTitle, variant) {
+  const base2 = (baseTitle || "").trim();
+  if (!variant || variant === "Trailer") return base2;
+  return base2 ? `${base2} \u2014 ${variant}` : variant;
+}
+
+// src/youtubio.ts
+var TTL = 30 * 60 * 1e3;
+var cache = /* @__PURE__ */ new Map();
+async function cachedJson(url) {
+  const hit = cache.get(url);
+  if (hit && hit.until > Date.now()) return hit.value;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(15e3) });
+    if (!res.ok) return null;
+    const value = await res.json();
+    cache.set(url, { value, until: Date.now() + TTL });
+    if (cache.size > 500) cache.delete(cache.keys().next().value);
+    return value;
+  } catch {
+    return null;
+  }
+}
+async function base() {
+  const url = String((await settings()).youtubio_url ?? "").trim();
+  return url ? url.replace(/\/manifest\.json\s*$/, "").replace(/\/$/, "") : null;
+}
+async function manifestCatalogs() {
+  const b2 = await base();
+  if (!b2) return null;
+  const m2 = await cachedJson(`${b2}/manifest.json`);
+  return m2 ? { base: b2, catalogs: m2.catalogs ?? [] } : null;
+}
+async function youtubioCatalogs() {
+  const m2 = await manifestCatalogs();
+  if (!m2) return [];
+  return m2.catalogs.filter((c) => !c.extra?.some((e) => e.isRequired)).slice(0, 12).map((c) => ({ id: `yb:${c.type}:${c.id}`, type: "video", name: c.name ?? c.id, group: "youtubio" }));
+}
+function toMeta(m2, fallbackType) {
+  const links = Array.isArray(m2.links) ? m2.links : [];
+  const channel = links.find((l) => l.category === "Directors")?.name;
+  const rawId = String(m2.id);
+  const id = rawId.startsWith("yt_id:") ? rawId : `yb:${String(m2.type || fallbackType)}|${rawId}`;
+  return {
+    ...m2,
+    id,
+    type: "video",
+    name: String(m2.name ?? ""),
+    subtitle: channel ?? m2.subtitle ?? null,
+    posterShape: "landscape"
+  };
+}
+async function youtubioCatalogItems(catalogId) {
+  const b2 = await base();
+  const [, type, ...rest] = catalogId.split(":");
+  const id = rest.join(":");
+  if (!b2 || !type || !id) return [];
+  const data = await cachedJson(`${b2}/catalog/${encodeURIComponent(type)}/${encodeURIComponent(id)}.json`);
+  return (data?.metas ?? []).map((m2) => toMeta(m2, type));
+}
+async function youtubioSearch(query) {
+  const m2 = await manifestCatalogs();
+  const cat = m2?.catalogs.find((c) => c.extra?.some((e) => e.name === "search" && e.isRequired));
+  if (!m2 || !cat) return null;
+  const data = await cachedJson(
+    `${m2.base}/catalog/${encodeURIComponent(cat.type)}/${encodeURIComponent(cat.id)}/search=${encodeURIComponent(query)}.json`
+  );
+  return (data?.metas ?? []).map((x2) => toMeta(x2, cat.type));
+}
+async function youtubioStream(id) {
+  const b2 = await base();
+  const body = id.slice("yb:".length);
+  const bar = body.indexOf("|");
+  if (!b2 || bar < 0) return null;
+  const data = await cachedJson(
+    `${b2}/stream/${encodeURIComponent(body.slice(0, bar) || "video")}/${encodeURIComponent(body.slice(bar + 1))}.json`
+  );
+  const streams = data?.streams ?? [];
+  const direct = streams.find((s) => s.url && !s.behaviorHints?.notWebReady) ?? streams.find((s) => s.url);
+  if (direct?.url) return { url: direct.url, name: direct.name };
+  const yt = streams.find((s) => s.ytId)?.ytId;
+  return yt ? { ytId: yt } : null;
 }
 
 // src/ytdlpStream.ts
-var ytdlp = makeYtDlp();
+var ytdlp2 = makeYtDlp();
 var YT_EXTRACTOR_ARGS = void 0;
 function extractYouTubeId(input) {
   if (!input) return null;
@@ -1165,10 +2799,10 @@ function buildQualityLadder(formatsIn) {
 }
 async function resolveYouTubeStream(videoId, opts = {}) {
   const allowSeparateAudio = opts.allowSeparateAudio !== false;
-  const info = YT_EXTRACTOR_ARGS ? await ytdlp.getInfoAsync(
+  const info = YT_EXTRACTOR_ARGS ? await ytdlp2.getInfoAsync(
     `https://www.youtube.com/watch?v=${videoId}`,
     { extractorArgs: YT_EXTRACTOR_ARGS }
-  ) : await ytdlp.getInfoAsync(`https://www.youtube.com/watch?v=${videoId}`);
+  ) : await ytdlp2.getInfoAsync(`https://www.youtube.com/watch?v=${videoId}`);
   const formats = info.formats ?? [];
   const best = pickBestUrl(formats, allowSeparateAudio);
   if (!best) return null;
@@ -1187,112 +2821,7 @@ async function resolveYouTubeStream(videoId, opts = {}) {
   };
 }
 
-// src/ytdlpVideos.ts
-var ytdlpVideos_exports = {};
-__export(ytdlpVideos_exports, {
-  APPROX_DATE_OPTS: () => APPROX_DATE_OPTS,
-  CHANNEL_SEARCH_SP: () => CHANNEL_SEARCH_SP,
-  entryToChannelMeta: () => entryToChannelMeta,
-  entryToVideoMeta: () => entryToVideoMeta,
-  formatSeconds: () => formatSeconds,
-  formatYtdlpDate: () => formatYtdlpDate,
-  isoDateFromEpoch: () => isoDateFromEpoch,
-  ytdlp: () => ytdlp2
-});
-var ytdlp2 = makeYtDlp();
-var APPROX_DATE_OPTS = {
-  extractorArgs: { youtubetab: ["approximate_date"] }
-};
-var CHANNEL_SEARCH_SP = "EgIQAg%3D%3D";
-function formatYtdlpDate(raw) {
-  if (typeof raw !== "string") return void 0;
-  const m2 = /^(\d{4})(\d{2})(\d{2})$/.exec(raw);
-  return m2 ? `${m2[1]}-${m2[2]}-${m2[3]}` : void 0;
-}
-function isoDateFromEpoch(raw) {
-  const secs = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(secs) || secs <= 0) return void 0;
-  const d = new Date(secs * 1e3);
-  return Number.isNaN(d.getTime()) ? void 0 : d.toISOString().slice(0, 10);
-}
-function formatSeconds(raw) {
-  const secs = typeof raw === "number" ? raw : Number(raw);
-  if (!Number.isFinite(secs) || secs <= 0) return void 0;
-  const total = Math.round(secs);
-  const h2 = Math.floor(total / 3600);
-  const m2 = Math.floor(total % 3600 / 60);
-  const s = total % 60;
-  const pad = (n) => String(n).padStart(2, "0");
-  return h2 > 0 ? `${h2}:${pad(m2)}:${pad(s)}` : `${m2}:${pad(s)}`;
-}
-function httpsThumb(url) {
-  if (typeof url !== "string" || !url) return void 0;
-  return url.startsWith("//") ? `https:${url}` : url;
-}
-function entryToVideoMeta(entry) {
-  const thumbnail = entry.thumbnail && String(entry.thumbnail).startsWith("http") ? entry.thumbnail : `https://i.ytimg.com/vi/${entry.id}/hqdefault.jpg`;
-  const releaseInfo = isoDateFromEpoch(entry.timestamp) ?? formatYtdlpDate(entry.upload_date);
-  const runtime = formatSeconds(entry.duration);
-  const channelName = entry.uploader || entry.channel;
-  const channelUrl = entry.uploader_url || entry.channel_url;
-  return {
-    id: `yt_id:${entry.id}`,
-    type: "video",
-    name: entry.title,
-    description: entry.description || "",
-    poster: thumbnail,
-    posterShape: "landscape",
-    releaseInfo,
-    runtime,
-    links: [
-      ...channelName ? [
-        {
-          name: channelName,
-          category: "Directors",
-          url: channelUrl || `https://www.youtube.com/watch?v=${entry.id}`
-        }
-      ] : [],
-      {
-        name: "YouTube",
-        category: "stream",
-        url: `https://www.youtube.com/watch?v=${entry.id}`
-      }
-    ]
-  };
-}
-function entryToChannelMeta(entry) {
-  const thumbs = Array.isArray(entry.thumbnails) ? entry.thumbnails : [];
-  const avatar = httpsThumb(thumbs.length ? thumbs[thumbs.length - 1].url : "");
-  return {
-    id: entry.channel_id || entry.id,
-    name: entry.channel || entry.title || "",
-    avatar,
-    subscribers: typeof entry.channel_follower_count === "number" ? entry.channel_follower_count : null,
-    verified: !!entry.channel_is_verified,
-    description: entry.description || "",
-    url: entry.channel_url || entry.url || ""
-  };
-}
-
-// src/ytmusic.ts
-var ytmusic_exports = {};
-__export(ytmusic_exports, {
-  extractYouTubeId: () => extractYouTubeId2,
-  fetchAlbum: () => fetchAlbum,
-  resolveAudioStream: () => resolveAudioStream,
-  searchAlbums: () => searchAlbums,
-  searchArtists: () => searchArtists2,
-  searchTracks: () => searchTracks,
-  ytdlp: () => ytdlp3
-});
-
 // src/ytmusic-innertube.ts
-var ytmusic_innertube_exports = {};
-__export(ytmusic_innertube_exports, {
-  searchAlbumsInnerTube: () => searchAlbumsInnerTube,
-  searchArtists: () => searchArtists,
-  searchSongs: () => searchSongs
-});
 var INNERTUBE_KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30";
 var INNERTUBE_URL = `https://music.youtube.com/youtubei/v1/search?key=${INNERTUBE_KEY}&prettyPrint=false`;
 var CLIENT_CONTEXT = {
@@ -1479,22 +3008,6 @@ function container(f) {
       return raw ?? void 0;
   }
 }
-function extractYouTubeId2(input) {
-  if (!input) return null;
-  if (/^[A-Za-z0-9_-]{11}$/.test(input)) return input;
-  const patterns = [
-    /[?&]v=([A-Za-z0-9_-]{11})/,
-    /youtu\.be\/([A-Za-z0-9_-]{11})/,
-    /youtube\.com\/embed\/([A-Za-z0-9_-]{11})/,
-    /youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/,
-    /music\.youtube\.com\/watch\?v=([A-Za-z0-9_-]{11})/
-  ];
-  for (const re of patterns) {
-    const m2 = input.match(re);
-    if (m2) return m2[1];
-  }
-  return null;
-}
 async function resolveAudioStream(videoId) {
   let info = await ytdlp3.getInfoAsync(`https://music.youtube.com/watch?v=${videoId}`).catch(() => null);
   let best = pickBestAudio(info?.formats ?? []);
@@ -1588,20 +3101,6 @@ async function fetchAlbum(albumId) {
 }
 
 // src/ytmusic-discover.ts
-var ytmusic_discover_exports = {};
-__export(ytmusic_discover_exports, {
-  fetchCommunityPlaylists: () => fetchCommunityPlaylists,
-  fetchGenreContent: () => fetchGenreContent,
-  fetchGenreTiles: () => fetchGenreTiles,
-  fetchMoodPlaylists: () => fetchMoodPlaylists,
-  fetchNewReleases: () => fetchNewReleases,
-  fetchPlaylistTracks: () => fetchPlaylistTracks,
-  fetchPopularAlbums: () => fetchPopularAlbums,
-  fetchPopularArtists: () => fetchPopularArtists,
-  fetchRelatedTracks: () => fetchRelatedTracks,
-  fetchTopArtists: () => fetchTopArtists,
-  fetchTrendingTracks: () => fetchTrendingTracks
-});
 var INNERTUBE_KEY2 = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30";
 var INNERTUBE_URL2 = `https://music.youtube.com/youtubei/v1/browse?key=${INNERTUBE_KEY2}&prettyPrint=false`;
 var CLIENT_CONTEXT2 = {
@@ -1920,26 +3419,6 @@ async function fetchNewReleases(limit = 24) {
   const data = await cachedBrowse("FEmusic_new_releases");
   return data.albums.slice(0, limit);
 }
-async function fetchTopArtists(limit = 20) {
-  const data = await cachedBrowse("FEmusic_charts");
-  return data.artists.slice(0, limit);
-}
-async function fetchPopularAlbums(limit = 24) {
-  const [explore, newReleases] = await Promise.all([
-    cachedBrowse("FEmusic_explore"),
-    cachedBrowse("FEmusic_new_releases")
-  ]);
-  const merged = [...explore.albums, ...newReleases.albums];
-  const seen = /* @__PURE__ */ new Set();
-  const out = [];
-  for (const a of merged) {
-    if (seen.has(a.id)) continue;
-    seen.add(a.id);
-    out.push(a);
-    if (out.length >= limit) break;
-  }
-  return out;
-}
 async function fetchPopularArtists(limit = 24) {
   const [charts, explore] = await Promise.all([
     cachedBrowse("FEmusic_charts"),
@@ -2170,50 +3649,6 @@ async function fetchRelatedTracks(seedVideoId, limit = 10) {
   }
 }
 
-// src/cookies.ts
-var cookies_exports = {};
-__export(cookies_exports, {
-  clearYoutubeCookies: () => clearYoutubeCookies,
-  readYoutubeCookiesStatus: () => readYoutubeCookiesStatus,
-  writeYoutubeCookies: () => writeYoutubeCookies
-});
-import { promises as fs } from "node:fs";
-import { dirname as dirname2 } from "node:path";
-function countYoutubeRows(content) {
-  return content.split("\n").filter((l) => /youtube\.com/i.test(l) && !l.trimStart().startsWith("#")).length;
-}
-async function setStatusMarkers(present, updated, rows) {
-  const host = getConduitHost();
-  if (!host.setAddonConfig) return;
-  await host.setAddonConfig("youtube_cookies_present", present ? "1" : "0");
-  await host.setAddonConfig("youtube_cookies_updated", updated);
-  await host.setAddonConfig("youtube_cookies_rows", String(rows));
-}
-async function writeYoutubeCookies(content) {
-  const text = content.replace(/\r\n/g, "\n").trim();
-  const rows = countYoutubeRows(text);
-  const looksLikeCookies = /^#\s*(Netscape|HTTP) Cookie File/im.test(text) || rows > 0;
-  if (!text || !looksLikeCookies) {
-    throw new Error("That doesn't look like a cookies.txt \u2014 no youtube.com cookies found.");
-  }
-  await fs.mkdir(dirname2(YTDLP_COOKIES_FILE), { recursive: true });
-  await fs.writeFile(YTDLP_COOKIES_FILE, text + "\n", { mode: 384 });
-  const updated = (/* @__PURE__ */ new Date()).toISOString();
-  await setStatusMarkers(true, updated, rows);
-  return { present: true, updated, rows };
-}
-async function clearYoutubeCookies() {
-  await fs.rm(YTDLP_COOKIES_FILE, { force: true });
-  await setStatusMarkers(false, "", 0);
-}
-function readYoutubeCookiesStatus(cfg) {
-  return {
-    present: cfg.youtube_cookies_present === "1",
-    updated: cfg.youtube_cookies_updated ?? "",
-    rows: parseInt(cfg.youtube_cookies_rows ?? "0", 10) || 0
-  };
-}
-
 // src/resources.ts
 var SEARCH_LIMIT = 20;
 var CHANNEL_LIMIT = 6;
@@ -2275,15 +3710,7 @@ function channelMeta(c) {
   };
 }
 function genreMeta(g2) {
-  return { id: `genre:${g2.browseId}`, type: "collection", name: g2.name, params: g2.params };
-}
-function payloadMetas(p) {
-  return [
-    ...p.tracks.map(trackMeta),
-    ...p.albums.map(albumMeta),
-    ...p.artists.map(artistMeta),
-    ...p.playlists.map(playlistMeta)
-  ];
+  return { id: `genre:${g2.browseId}|${g2.params}`, type: "genre", name: g2.name };
 }
 function videoThumb(id) {
   const vid = extractYouTubeId(id.replace(/^yt(_id)?:/, ""));
@@ -2293,7 +3720,16 @@ function videoIdOf(id) {
   const bare = id.replace(/^yt(_id)?:/, "");
   return extractYouTubeId(bare) ?? bare;
 }
+var MUSIC_TYPES = /* @__PURE__ */ new Set(["track", "music", "album", "artist", "playlist", "genre"]);
+var VIDEO_TYPES = /* @__PURE__ */ new Set(["video", "channel"]);
+async function enabled(type) {
+  const s = await settings();
+  if (MUSIC_TYPES.has(type) && s.music_enabled === false) throw new Error("YouTube Music is switched off in Conduit's settings");
+  if (VIDEO_TYPES.has(type) && s.videos_enabled === false) throw new Error("YouTube videos are switched off in Conduit's settings");
+}
 async function searchVideos(query) {
+  const viaCatalogue = await youtubioSearch(query);
+  if (viaCatalogue?.length) return viaCatalogue;
   const { ytdlp: ytdlp4, APPROX_DATE_OPTS: APPROX_DATE_OPTS2, entryToVideoMeta: entryToVideoMeta2 } = ytdlpVideos_exports;
   const info = await ytdlp4.getInfoAsync(
     `ytsearch${SEARCH_LIMIT}:${query}`,
@@ -2308,12 +3744,14 @@ async function searchChannels(query) {
   return (info.entries || []).slice(0, CHANNEL_LIMIT).map(entryToChannelMeta2).filter((c) => c.id && c.id.startsWith("UC")).map(channelMeta);
 }
 async function videoInfo(id) {
-  const info = await ytdlp2.getInfoAsync(`https://www.youtube.com/watch?v=${videoIdOf(id)}`);
+  const info = await ytdlp.getInfoAsync(`https://www.youtube.com/watch?v=${videoIdOf(id)}`);
   return info;
 }
 async function meta(type, id) {
+  await enabled(type);
   switch (type) {
     case "video":
+    case "trailer":
       return { meta: entryToVideoMeta(await videoInfo(id)) };
     case "track":
     case "music": {
@@ -2332,12 +3770,49 @@ async function meta(type, id) {
     case "album": {
       const album = await fetchAlbum(id);
       if (!album) return { meta: null };
-      return { meta: { ...albumMeta(album), items: album.tracks.map(trackMeta) } };
+      return {
+        meta: {
+          ...albumMeta(album),
+          items: album.tracks.map((t) => trackMeta({ ...t, album: album.title, artist: t.artist || album.artist, thumbnail: t.thumbnail || album.thumbnail }))
+        }
+      };
     }
     case "playlist": {
-      const pl = await fetchPlaylistTracks(id);
+      const pl = await fetchPlaylistTracks(id, 150);
       return {
         meta: { ...playlistMeta({ id, title: pl.title, thumbnail: pl.thumbnail }), items: pl.tracks.map(trackMeta) }
+      };
+    }
+    case "artist": {
+      const [songs, albums, artists] = await Promise.all([
+        searchTracks(id, 10).catch(() => []),
+        searchAlbums(id, 20).catch(() => []),
+        searchArtists2(id, 1).catch(() => [])
+      ]);
+      const lower = id.toLowerCase();
+      const own = (x2) => String(x2.artist ?? "").toLowerCase().includes(lower);
+      return {
+        meta: {
+          ...artistMeta({ id, name: artists[0]?.name ?? id, thumbnail: artists[0]?.thumbnail }),
+          items: [...songs.filter(own).map(trackMeta), ...albums.filter(own).map(albumMeta)]
+        }
+      };
+    }
+    case "channel": {
+      if (!/^UC[\w-]{20,}$/.test(id)) return { meta: null };
+      const { ytdlp: ytdlp4, APPROX_DATE_OPTS: APPROX_DATE_OPTS2, entryToVideoMeta: entryToVideoMeta2 } = ytdlpVideos_exports;
+      const info = await ytdlp4.getInfoAsync(`https://www.youtube.com/channel/${id}/videos`, {
+        ...APPROX_DATE_OPTS2,
+        playlistEnd: 40
+      });
+      return {
+        meta: {
+          id,
+          type: "channel",
+          name: String(info.title || "").replace(/ - Videos$/, ""),
+          posterShape: "circle",
+          items: (info.entries || []).map(entryToVideoMeta2)
+        }
       };
     }
     default:
@@ -2345,9 +3820,10 @@ async function meta(type, id) {
   }
 }
 async function artwork(type, id) {
-  if (type === "video" || type === "track" || type === "music") {
+  await enabled(type);
+  if (type === "video" || type === "trailer" || type === "track" || type === "music") {
     const thumb = videoThumb(id);
-    return { artwork: { thumb, poster: thumb, background: type === "video" ? thumb : null } };
+    return { artwork: { thumb, poster: thumb, background: type === "video" || type === "trailer" ? thumb : null } };
   }
   if (type === "album" || type === "playlist") {
     const { meta: m2 } = await meta(type, id);
@@ -2360,32 +3836,74 @@ async function artwork(type, id) {
   }
   throw new Error(`artwork does not serve type "${type}"`);
 }
+var genreCache = /* @__PURE__ */ new Map();
+function genreContent(genre) {
+  const hit = genreCache.get(genre);
+  if (hit && hit.until > Date.now()) return hit.value;
+  const body = genre.slice("genre:".length);
+  const bar = body.indexOf("|");
+  const value = fetchGenreContent(body.slice(0, bar), body.slice(bar + 1));
+  genreCache.set(genre, { value, until: Date.now() + 30 * 60 * 1e3 });
+  return value;
+}
+async function madeForYou(seedsRaw) {
+  const seeds = String(seedsRaw ?? "").split(",").map((s) => s.trim()).filter(Boolean).slice(0, 4);
+  if (!seeds.length) return [];
+  const lists = await Promise.all(seeds.map((id) => fetchRelatedTracks(videoIdOf(id), 12).catch(() => [])));
+  const seen = new Set(seeds.map(videoIdOf));
+  const out = [];
+  for (let i = 0; out.length < 24 && lists.some((l) => l.length > i); i += 1) {
+    for (const l of lists) {
+      const t = l[i];
+      if (t && !seen.has(t.id)) {
+        seen.add(t.id);
+        out.push(trackMeta(t));
+      }
+    }
+  }
+  return out;
+}
 async function catalog(type, id, extra) {
+  if (id.startsWith("rt:")) return { metas: await rtCatalogItems(id.slice(3)) };
+  await enabled(type);
+  if (id.startsWith("yb:")) return { metas: await youtubioCatalogItems(id) };
+  const genre = typeof extra.genre === "string" && extra.genre.startsWith("genre:") ? extra.genre : null;
+  if (genre && ["track/trending", "album/new-releases", "artist/popular", "playlist/community"].includes(`${type}/${id}`)) {
+    const g2 = await genreContent(genre);
+    const pick = {
+      track: g2.tracks.map(trackMeta),
+      album: g2.albums.map(albumMeta),
+      artist: g2.artists.map(artistMeta),
+      playlist: g2.playlists.map(playlistMeta)
+    };
+    return { metas: pick[type] ?? [] };
+  }
   switch (`${type}/${id}`) {
+    case "track/made-for-you":
+      return { metas: await madeForYou(extra.seeds) };
     case "track/trending":
-      return { metas: (await fetchTrendingTracks()).map(trackMeta) };
+      return { metas: (await fetchTrendingTracks(24)).map(trackMeta) };
     case "album/new-releases":
-      return { metas: (await fetchNewReleases()).map(albumMeta) };
-    case "album/popular":
-      return { metas: (await fetchPopularAlbums()).map(albumMeta) };
+      return { metas: (await fetchNewReleases(24)).map(albumMeta) };
     case "artist/popular":
-      return { metas: (await fetchPopularArtists()).map(artistMeta) };
+      return { metas: (await fetchPopularArtists(24)).map(artistMeta) };
     case "playlist/moods":
-      return { metas: (await fetchMoodPlaylists()).map(playlistMeta) };
+      return { metas: (await fetchMoodPlaylists(24)).map(playlistMeta) };
     case "playlist/community":
-      return { metas: (await fetchCommunityPlaylists()).map(playlistMeta) };
-    case "collection/genres":
+      return { metas: (await fetchCommunityPlaylists(24)).map(playlistMeta) };
+    case "genre/genres":
       return { metas: (await fetchGenreTiles()).map(genreMeta) };
-  }
-  if (type === "collection" && id.startsWith("genre:")) {
-    return { metas: payloadMetas(await fetchGenreContent(id.slice(6), String(extra.params ?? ""))) };
-  }
-  if (type === "track" && id.startsWith("related:")) {
-    return { metas: (await fetchRelatedTracks(id.slice(8))).map(trackMeta) };
   }
   throw new Error(`catalog does not serve "${type}/${id}"`);
 }
+async function catalogs() {
+  const s = await settings();
+  const music = s.music_enabled === false ? [] : manifest_default.catalogs ?? [];
+  const videos = s.videos_enabled === false ? [] : await youtubioCatalogs();
+  return { catalogs: [...music, ...videos, ...await rtCatalogs()] };
+}
 async function search(type, query) {
+  await enabled(type);
   switch (type) {
     case "video":
       return { metas: await searchVideos(query) };
@@ -2393,103 +3911,117 @@ async function search(type, query) {
       return { metas: await searchChannels(query) };
     case "track":
     case "music":
-      return { metas: (await searchTracks(query, SEARCH_LIMIT)).map(trackMeta) };
+      return { metas: (await searchTracks(query, 30)).map(trackMeta) };
     case "album":
-      return { metas: (await searchAlbums(query, SEARCH_LIMIT)).map(albumMeta) };
+      return { metas: (await searchAlbums(query, 12)).map(albumMeta) };
     case "artist":
-      return { metas: (await searchArtists2(query, SEARCH_LIMIT)).map(artistMeta) };
+      return { metas: (await searchArtists2(query, 8)).map(artistMeta) };
     default:
       throw new Error(`search does not serve type "${type}"`);
   }
 }
-async function stream(type, id) {
-  const videoId = videoIdOf(id);
-  if (type === "track" || type === "music") {
-    const s2 = await resolveAudioStream(videoId);
-    return { streams: s2 ? [{ ...s2, name: s2.title }] : [] };
+var PROXY = {
+  proxy: true,
+  proxyChunkSize: 10 * 1024 * 1024,
+  proxyHeaders: {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+    Referer: "https://www.youtube.com/"
   }
-  const s = await resolveYouTubeStream(videoId);
-  return { streams: s ? [{ ...s, name: s.title }] : [] };
+};
+async function stream(type, id, context) {
+  await enabled(type);
+  if (type === "track" || type === "music") {
+    const s2 = await resolveAudioStream(videoIdOf(id));
+    if (!s2?.url) return { streams: [] };
+    const out = {
+      id: videoIdOf(id),
+      url: s2.url,
+      name: s2.title,
+      behaviorHints: PROXY,
+      display: { title: s2.title || "Audio" },
+      title: s2.track || s2.title,
+      artist: s2.artist,
+      album: s2.album,
+      thumbnail: s2.thumbnail,
+      duration: s2.duration
+    };
+    return { streams: [out] };
+  }
+  let videoId = null;
+  if (id.startsWith("yb:")) {
+    const own = await youtubioStream(id);
+    if (own?.url) return { streams: [{ url: own.url, name: own.name, display: { title: own.name || "Video" } }] };
+    videoId = own?.ytId ?? null;
+  }
+  videoId ??= videoIdOf(id);
+  const s = await resolveYouTubeStream(videoId, { allowSeparateAudio: context?.client?.separateAudio !== false });
+  if (!s) return { streams: [] };
+  return {
+    streams: [
+      {
+        id: videoId,
+        url: s.url,
+        audioUrl: s.audioUrl ?? null,
+        name: s.title,
+        behaviorHints: PROXY,
+        qualities: s.qualities.map((q2) => ({ label: q2.label, height: q2.height, url: q2.videoUrl, audioUrl: q2.audioUrl ?? null })),
+        display: { title: s.quality || "Video", height: s.qualities[0]?.height },
+        thumbnail: s.thumbnail,
+        quality: s.quality,
+        urlExpiry: s.urlExpiry
+      }
+    ]
+  };
 }
 var resources = {
   search: ({ type, id }) => search(type, id),
   catalog: ({ type, id, extra }) => catalog(type, id, extra),
+  catalogs: () => catalogs(),
   meta: ({ type, id }) => meta(type, id),
-  stream: ({ type, id }) => stream(type, id),
+  stream: ({ type, id, context }) => stream(type, id, context),
   artwork: ({ type, id }) => artwork(type, id)
 };
 
-// manifest.json
-var manifest_default = {
-  id: "zero.conduit",
-  name: "Conduit",
-  version: "2.0.1",
-  description: "yt-dlp online video for Zero Media \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
-  resources: [
-    "catalog",
-    "meta",
-    "stream",
-    "search",
-    "artwork"
-  ],
-  types: [
-    "video",
-    "channel",
-    "music",
-    "track",
-    "album",
-    "artist",
-    "playlist"
-  ],
-  idPrefixes: [
-    "yt:",
-    "UC"
-  ],
-  provides: {
-    content: [
-      "videos",
-      "music"
-    ],
-    metadata: [
-      "videos",
-      "music"
-    ],
-    artwork: [
-      "videos",
-      "music"
-    ]
-  },
-  zero: {
-    kind: "videos",
-    sdk: 2,
-    repo: "j4ckgrey/zero_videos",
-    branch: "main",
-    bundlePath: "dist/index.mjs",
-    bundleUrl: "https://raw.githubusercontent.com/j4ckgrey/zero_videos/release/dist/index.mjs",
-    tabs: [],
-    configKeys: [],
-    features: [
-      "trailers",
-      "videos",
-      "ytmusic"
-    ],
-    install: {
-      provisions: [
-        "yt-dlp-binary"
-      ]
-    }
-  }
-};
-
 // src/plugin.ts
+async function status() {
+  const [cookies, s, playlists] = await Promise.all([cookiesStatus(), settings(), listRtPlaylists()]);
+  const pluginDir2 = join5(dataDir(), "bin", "yt-dlp-plugins");
+  const item = (label, value, tone) => ({ label, value, tone });
+  const shown = playlists.filter((p) => p.enabled).length;
+  return {
+    ok: true,
+    items: [
+      item("yt-dlp", existsSync7(ytdlpBinaryPath()) ? "Installed" : "Fetched on first use", existsSync7(ytdlpBinaryPath()) ? "success" : "info"),
+      item("PO-token plugin", existsSync7(pluginDir2) && readdirSync2(pluginDir2).length > 0 ? "Installed" : "Fetched on first use", "info"),
+      cookies.problem ? item("Cookies", cookies.problem, "error") : item("Cookies", cookies.present ? `${cookies.rows} YouTube cookies` : "None \u2014 datacenter IPs may be bot-checked", cookies.present ? "success" : "warning"),
+      item("YouTubio catalogue", s.youtubio_url ? "Set" : "Not set", s.youtubio_url ? "success" : "info"),
+      item("Rotten Tomatoes rows", playlists.length ? `${shown} of ${playlists.length} playlists shown` : "Not discovered yet", shown ? "success" : "info")
+    ]
+  };
+}
 var addon = defineAddon({
   manifest: manifest_default,
-  setup(host) {
+  async setup(host) {
     setConduitHost(host);
-    const api = { ytdlpStream: ytdlpStream_exports, ytdlpVideos: ytdlpVideos_exports, ytmusic: ytmusic_exports, ytmusicDiscover: ytmusic_discover_exports, ytmusicInnertube: ytmusic_innertube_exports, cookies: cookies_exports };
+    await migrateStorage();
+    void ensureYtDlp().catch((err) => host.logger.warn("yt-dlp", `Not ready yet: ${err.message}`));
     return {
-      api,
-      resources
+      resources,
+      actions: {
+        status: async () => status(),
+        "rt-list": async () => ({
+          ok: true,
+          rows: (await listRtPlaylists()).map((p) => ({ id: p.id, title: p.title, videos: p.videoCount, enabled: p.enabled }))
+        }),
+        "rt-toggle": async ({ row }) => {
+          const r = row;
+          if (!r?.id) return { ok: false, message: "No playlist given" };
+          await setRtPlaylistEnabled(r.id, !r.enabled);
+          return { ok: true, message: r.enabled ? "Hidden" : "Shown on the home screen" };
+        },
+        "rt-discover": async () => ({ ok: true, message: `Found ${await discoverRtPlaylists()} playlists` }),
+        "update-ytdlp": async () => ({ ok: true, message: await updateYtDlp() })
+      }
     };
   }
 });
