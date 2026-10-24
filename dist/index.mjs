@@ -5,10 +5,10 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../rewind_addon_sdk/src/manifest.ts
+// ../zero_addon_sdk/src/manifest.ts
 var SDK_PROTOCOL_VERSION = 2;
 
-// ../rewind_addon_sdk/src/addon.ts
+// ../zero_addon_sdk/src/addon.ts
 function defineAddon(def) {
   return {
     manifest: def.manifest,
@@ -2421,10 +2421,10 @@ var resources = {
 
 // manifest.json
 var manifest_default = {
-  id: "rewind.conduit",
+  id: "zero.conduit",
   name: "Conduit",
   version: "2.0.1",
-  description: "yt-dlp online video for Rewind \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
+  description: "yt-dlp online video for Zero Media \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
   resources: [
     "catalog",
     "meta",
@@ -2459,13 +2459,13 @@ var manifest_default = {
       "music"
     ]
   },
-  rewind: {
+  zero: {
     kind: "videos",
     sdk: 2,
-    repo: "j4ckgrey/rewind_videos",
+    repo: "j4ckgrey/zero_videos",
     branch: "main",
     bundlePath: "dist/index.mjs",
-    bundleUrl: "https://raw.githubusercontent.com/j4ckgrey/rewind_videos/release/dist/index.mjs",
+    bundleUrl: "https://raw.githubusercontent.com/j4ckgrey/zero_videos/release/dist/index.mjs",
     tabs: [],
     configKeys: [],
     features: [
