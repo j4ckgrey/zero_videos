@@ -1,7 +1,7 @@
 {
   "id": "zero.conduit",
   "name": "Conduit",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "yt-dlp online video for Zero Media — content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
   "resources": [
     "catalog",
@@ -114,7 +114,13 @@
               "kind": "status",
               "id": "status",
               "title": "Status",
-              "source": "status"
+              "source": "status",
+              "buttons": [
+                {
+                  "action": "update-ytdlp",
+                  "label": "Update yt-dlp"
+                }
+              ]
             },
             {
               "kind": "form",
@@ -153,29 +159,15 @@
                 {
                   "key": "enabled",
                   "label": "Shown",
-                  "format": "bool"
+                  "format": "bool",
+                  "action": "rt-toggle"
                 }
               ],
-              "rowButtons": [
-                {
-                  "action": "rt-toggle",
-                  "label": "Show / hide"
-                }
-              ],
-              "empty": "No playlists yet — press Discover playlists."
-            },
-            {
-              "kind": "buttons",
-              "id": "tools",
-              "title": "Tools",
+              "empty": "No playlists yet — press Discover playlists.",
               "buttons": [
                 {
                   "action": "rt-discover",
                   "label": "Discover playlists"
-                },
-                {
-                  "action": "update-ytdlp",
-                  "label": "Update yt-dlp"
                 }
               ]
             }

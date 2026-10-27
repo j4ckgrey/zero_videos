@@ -226,6 +226,18 @@ function validateSettings(raw) {
     if (f.type === "select" && (!Array.isArray(f.options) || f.options.length === 0)) {
       throw new Error(`${at}: a select needs options`);
     }
+    if (f.ordered && f.type !== "list") throw new Error(`${at}: ordered is for a list`);
+    if (f.type === "blocks") {
+      const spec = f.blocks;
+      if (!spec || !Array.isArray(spec.categories) || spec.categories.length === 0) {
+        throw new Error(`${at}: a blocks setting needs blocks.categories`);
+      }
+      for (const c of spec.categories) {
+        if (typeof c?.value !== "string" || !Array.isArray(c.styles) || c.styles.length === 0) {
+          throw new Error(`${at}: blocks category "${c?.value}" needs a value and styles`);
+        }
+      }
+    }
     if (f.default !== void 0) {
       const why = checkSettingValue(f, f.default);
       if (why) throw new Error(`${at}.default: ${why}`);
@@ -249,6 +261,15 @@ function checkSettingValue(field, value) {
       return Array.isArray(value) && value.every((x2) => typeof x2 === "string") ? null : "must be a list of strings";
     case "select":
       return typeof value === "string" && !!field.options?.some((o) => o.value === value) ? null : "must be one of the options";
+    case "blocks":
+      if (typeof value !== "string") return "must be text";
+      if (value === "") return null;
+      try {
+        const v = JSON.parse(value);
+        return v && typeof v === "object" && v.title && Array.isArray(v.subtitle) ? null : "must be a layout { title, subtitle }";
+      } catch {
+        return "must be JSON";
+      }
     case "url":
       if (typeof value !== "string") return "must be text";
       return value === "" || /^https?:\/\/\S+$/.test(value) ? null : "must be an http(s) link";
@@ -296,7 +317,12 @@ var init_settings = __esm({
       "select",
       "textarea",
       /** A list of short strings (hosts, tags, ids…). */
-      "list"
+      "list",
+      /**
+       * A label built from blocks — the stream-label builder. The value is a JSON
+       * string of a `BlockLayout`; `blocks` declares the catalogue to build from.
+       */
+      "blocks"
     ];
     KEY_RE = /^[a-z][a-z0-9_]{0,63}$/;
   }
@@ -323,10 +349,18 @@ function validateUi(raw, settingKeys, actionIds) {
       if (ids.has(s.id)) throw new Error(`${sat}.id "${s.id}" is used twice`);
       ids.add(s.id);
       if (s.kind === "form") needFields(s.fields, sat);
+      if (s.kind === "form" || s.kind === "table" || s.kind === "status") {
+        for (const b2 of s.buttons ?? []) needAction(b2.action, `${sat}.buttons`);
+      }
       if (s.kind === "table") {
         needAction(s.rows, `${sat}.rows`);
         if (!Array.isArray(s.columns) || s.columns.length === 0) throw new Error(`${sat}.columns must not be empty`);
         for (const b2 of s.rowButtons ?? []) needAction(b2.action, `${sat}.rowButtons`);
+        for (const c of s.columns) {
+          if (c.action === void 0) continue;
+          if (c.format !== "bool") throw new Error(`${sat}.columns "${c.key}": an action needs format "bool"`);
+          needAction(c.action, `${sat}.columns "${c.key}"`);
+        }
         if (s.add) {
           needAction(s.add.action, `${sat}.add`);
           validateSettings(s.add.fields);
@@ -970,7 +1004,7 @@ async function cookiesStatus() {
 var manifest_default = {
   id: "zero.conduit",
   name: "Conduit",
-  version: "2.0.1",
+  version: "2.0.2",
   description: "yt-dlp online video for Zero Media \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
   resources: [
     "catalog",
@@ -1083,7 +1117,13 @@ var manifest_default = {
               kind: "status",
               id: "status",
               title: "Status",
-              source: "status"
+              source: "status",
+              buttons: [
+                {
+                  action: "update-ytdlp",
+                  label: "Update yt-dlp"
+                }
+              ]
             },
             {
               kind: "form",
@@ -1122,29 +1162,15 @@ var manifest_default = {
                 {
                   key: "enabled",
                   label: "Shown",
-                  format: "bool"
+                  format: "bool",
+                  action: "rt-toggle"
                 }
               ],
-              rowButtons: [
-                {
-                  action: "rt-toggle",
-                  label: "Show / hide"
-                }
-              ],
-              empty: "No playlists yet \u2014 press Discover playlists."
-            },
-            {
-              kind: "buttons",
-              id: "tools",
-              title: "Tools",
+              empty: "No playlists yet \u2014 press Discover playlists.",
               buttons: [
                 {
                   action: "rt-discover",
                   label: "Discover playlists"
-                },
-                {
-                  action: "update-ytdlp",
-                  label: "Update yt-dlp"
                 }
               ]
             }
