@@ -1004,7 +1004,7 @@ async function cookiesStatus() {
 var manifest_default = {
   id: "zero.conduit",
   name: "Conduit",
-  version: "2.0.2",
+  version: "2.0.3",
   description: "yt-dlp online video for Zero Media \u2014 content, metadata and artwork for videos and music (YouTube search + playback, YouTube Music), plus homepage trailer playback. Provisions the yt-dlp binary on the server at install. Local videos/music libraries do not need this addon.",
   resources: [
     "catalog",
@@ -3011,9 +3011,9 @@ function pickBestAudio(formats) {
   );
   if (audio.length === 0) return null;
   return [...audio].sort((a, b2) => {
-    const abrDiff = (b2.abr ?? b2.tbr ?? 0) - (a.abr ?? a.tbr ?? 0);
-    if (abrDiff !== 0) return abrDiff;
-    return codecRank2(a.acodec) - codecRank2(b2.acodec);
+    const codecDiff = codecRank2(a.acodec) - codecRank2(b2.acodec);
+    if (codecDiff !== 0) return codecDiff;
+    return (b2.abr ?? b2.tbr ?? 0) - (a.abr ?? a.tbr ?? 0);
   })[0];
 }
 function normalizeCodec(codec) {
